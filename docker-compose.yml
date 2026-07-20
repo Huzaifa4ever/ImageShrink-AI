@@ -1,0 +1,17 @@
+services:
+  # ─── MongoDB ────────────────────────────────────────
+  mongo:
+    image: mongo:7
+    container_name: imageshrink-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      # No auth for local dev — add MONGO_INITDB_ROOT_USERNAME/PASSWORD for production
+      MONGO_INITDB_DATABASE: imageshrink_ai
+
+volumes:
+  mongo_data:
+    driver: local
