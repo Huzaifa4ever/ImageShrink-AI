@@ -1,0 +1,255 @@
+{
+  "_readme": [
+    "Base image knowledge shared by the backend rule engine and the VS Code extension.",
+    "",
+    "sizeMb figures are uncompressed `docker images` sizes for linux/amd64, rounded. They",
+    "are estimates used to rank suggestions and to show a user roughly what a swap buys",
+    "them - never presented as measured facts. Re-measure before editing.",
+    "",
+    "compatibility is how likely the swap is to be drop-in, as a percentage:",
+    "  100  identical libc and toolchain, no expected behaviour change",
+    "  95+  same distro family, may lack a package you install explicitly",
+    "  80-94 different libc (musl) - native addons may need rebuilding",
+    "  <80  no shell or package manager (distroless), or a different runtime layout",
+    "",
+    "The VS Code completion provider offers `tags` for the matching family, so the ordering",
+    "within recommendations is the ordering the user sees."
+  ],
+
+  "families": {
+    "node": {
+      "displayName": "Node.js",
+      "defaultSizeMb": 1100,
+      "recommendations": [
+        {
+          "image": "node:22-alpine",
+          "sizeMb": 160,
+          "compatibility": 85,
+          "recommended": true,
+          "note": "Alpine uses musl libc. Packages with native addons (sharp, bcrypt, canvas) may need rebuilding or a -slim base instead."
+        },
+        {
+          "image": "node:lts-alpine",
+          "sizeMb": 160,
+          "compatibility": 85,
+          "note": "Tracks the current LTS line. Convenient, but the major version moves under you."
+        },
+        {
+          "image": "node:22-slim",
+          "sizeMb": 220,
+          "compatibility": 97,
+          "note": "Debian-based, so glibc native modules keep working. The safe first move off a full image."
+        },
+        {
+          "image": "gcr.io/distroless/nodejs22-debian12",
+          "sizeMb": 150,
+          "compatibility": 70,
+          "note": "No shell and no package manager, so nothing to exploit and nothing to debug with. Final stage of a multi-stage build only."
+        }
+      ]
+    },
+
+    "python": {
+      "displayName": "Python",
+      "defaultSizeMb": 1020,
+      "recommendations": [
+        {
+          "image": "python:3.12-slim",
+          "sizeMb": 130,
+          "compatibility": 97,
+          "recommended": true,
+          "note": "Debian-based. Wheels for most packages install without a compiler, unlike Alpine."
+        },
+        {
+          "image": "python:3.12-alpine",
+          "sizeMb": 55,
+          "compatibility": 78,
+          "note": "Smallest, but manylinux wheels do not apply - numpy, pandas and friends compile from source, which can make builds far slower and images larger than -slim."
+        },
+        {
+          "image": "gcr.io/distroless/python3-debian12",
+          "sizeMb": 55,
+          "compatibility": 65,
+          "note": "Final stage only. No pip, no shell."
+        }
+      ]
+    },
+
+    "ubuntu": {
+      "displayName": "Ubuntu",
+      "defaultSizeMb": 78,
+      "recommendations": [
+        {
+          "image": "debian:bookworm-slim",
+          "sizeMb": 74,
+          "compatibility": 95,
+          "recommended": true,
+          "note": "Near-identical package set via apt, smaller, and patched on a predictable cadence."
+        },
+        {
+          "image": "alpine:3.20",
+          "sizeMb": 8,
+          "compatibility": 60,
+          "note": "Dramatically smaller, but apk package names differ and musl replaces glibc."
+        },
+        {
+          "image": "gcr.io/distroless/base-debian12",
+          "sizeMb": 20,
+          "compatibility": 55,
+          "note": "For a statically or near-statically linked binary. No shell, no apt."
+        }
+      ]
+    },
+
+    "debian": {
+      "displayName": "Debian",
+      "defaultSizeMb": 117,
+      "recommendations": [
+        {
+          "image": "debian:bookworm-slim",
+          "sizeMb": 74,
+          "compatibility": 98,
+          "recommended": true,
+          "note": "Same distro with the docs and locale data stripped. Almost always a free win."
+        },
+        {
+          "image": "gcr.io/distroless/base-debian12",
+          "sizeMb": 20,
+          "compatibility": 55,
+          "note": "Final stage of a multi-stage build, for a compiled binary."
+        }
+      ]
+    },
+
+    "golang": {
+      "displayName": "Go",
+      "defaultSizeMb": 840,
+      "recommendations": [
+        {
+          "image": "gcr.io/distroless/static-debian12",
+          "sizeMb": 2,
+          "compatibility": 75,
+          "recommended": true,
+          "note": "Build with CGO_ENABLED=0 in a golang builder stage, then copy the binary here. A Go service rarely needs anything else."
+        },
+        {
+          "image": "golang:1.23-alpine",
+          "sizeMb": 250,
+          "compatibility": 90,
+          "note": "For the builder stage. Requires build-base if you use cgo."
+        },
+        {
+          "image": "alpine:3.20",
+          "sizeMb": 8,
+          "compatibility": 85,
+          "note": "When you need a shell alongside the binary for debugging or an entrypoint script."
+        }
+      ]
+    },
+
+    "openjdk": {
+      "displayName": "Java",
+      "defaultSizeMb": 470,
+      "recommendations": [
+        {
+          "image": "eclipse-temurin:21-jre-alpine",
+          "sizeMb": 180,
+          "compatibility": 88,
+          "recommended": true,
+          "note": "A JRE is enough to run a built jar; the JDK is only needed to compile it. openjdk: images are deprecated in favour of temurin."
+        },
+        {
+          "image": "eclipse-temurin:21-jre",
+          "sizeMb": 270,
+          "compatibility": 97,
+          "note": "Debian-based JRE. Use when a native library needs glibc."
+        }
+      ]
+    },
+
+    "nginx": {
+      "displayName": "nginx",
+      "defaultSizeMb": 190,
+      "recommendations": [
+        {
+          "image": "nginx:1.27-alpine",
+          "sizeMb": 50,
+          "compatibility": 96,
+          "recommended": true,
+          "note": "Same configuration and module set for static-file serving and reverse proxying."
+        }
+      ]
+    },
+
+    "ruby": {
+      "displayName": "Ruby",
+      "defaultSizeMb": 900,
+      "recommendations": [
+        {
+          "image": "ruby:3.3-slim",
+          "sizeMb": 200,
+          "compatibility": 95,
+          "recommended": true,
+          "note": "Gems with native extensions still build, unlike on Alpine."
+        },
+        {
+          "image": "ruby:3.3-alpine",
+          "sizeMb": 90,
+          "compatibility": 75,
+          "note": "Needs build-base for native gems, which often cancels out the saving."
+        }
+      ]
+    },
+
+    "php": {
+      "displayName": "PHP",
+      "defaultSizeMb": 480,
+      "recommendations": [
+        {
+          "image": "php:8.3-fpm-alpine",
+          "sizeMb": 110,
+          "compatibility": 90,
+          "recommended": true,
+          "note": "Use with docker-php-ext-install for the extensions you actually need."
+        },
+        {
+          "image": "php:8.3-cli-alpine",
+          "sizeMb": 100,
+          "compatibility": 90,
+          "note": "For workers and CLI tooling rather than a web SAPI."
+        }
+      ]
+    },
+
+    "dotnet": {
+      "displayName": ".NET",
+      "defaultSizeMb": 770,
+      "recommendations": [
+        {
+          "image": "mcr.microsoft.com/dotnet/aspnet:8.0-alpine",
+          "sizeMb": 110,
+          "compatibility": 90,
+          "recommended": true,
+          "note": "Runtime only. Build with the sdk image in a separate stage."
+        },
+        {
+          "image": "mcr.microsoft.com/dotnet/runtime-deps:8.0-alpine",
+          "sizeMb": 20,
+          "compatibility": 70,
+          "note": "For a self-contained or AOT-published binary."
+        }
+      ]
+    }
+  },
+
+  "distrolessFinalStages": {
+    "_comment": "Suggested final-stage image per detected language, for the multi-stage quick fix.",
+    "node": "gcr.io/distroless/nodejs22-debian12",
+    "python": "python:3.12-slim",
+    "golang": "gcr.io/distroless/static-debian12",
+    "openjdk": "eclipse-temurin:21-jre-alpine",
+    "dotnet": "mcr.microsoft.com/dotnet/aspnet:8.0-alpine",
+    "ruby": "ruby:3.3-slim",
+    "php": "php:8.3-fpm-alpine"
+  }
+}
