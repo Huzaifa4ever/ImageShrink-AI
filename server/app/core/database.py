@@ -12,6 +12,7 @@ async def connect_db() -> None:
         _client = AsyncIOMotorClient(
             settings.MONGO_URI,
             serverSelectionTimeoutMS=5000,
+            tz_aware=True,
         )
         await _client.admin.command("ping")
         print(f"MongoDB connected {settings.MONGO_DB_NAME}")
