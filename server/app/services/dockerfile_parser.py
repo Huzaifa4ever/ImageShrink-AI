@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import re
@@ -9,8 +8,8 @@ from dataclasses import dataclass, field
 @dataclass
 class ParsedLayer:
     id: str
-    command: str       
-    size: int = 0       
+    command: str
+    size: int = 0
     size_human: str = "unknown"
     is_optimizable: bool = False
     suggestion: str = ""
@@ -26,6 +25,7 @@ class ParsedStage:
 
 
 _HEAVY_INSTRUCTIONS = {"RUN", "COPY", "ADD"}
+
 _OPTIMIZABLE_PATTERNS = [
     (r"npm install(?! --production)", "Use --production or --omit=dev to exclude devDependencies"),
     (r"apt-get install", "Pin package versions and use --no-install-recommends to reduce layer size"),
@@ -64,6 +64,7 @@ def parse_dockerfile(content: str) -> list[ParsedStage]:
         if line.endswith("\\"):
             current_layer_lines.append(line[:-1].strip())
             continue
+
         if line.upper().startswith("FROM "):
             if current_stage and current_layer_lines:
                 flush_layer(current_stage, " ".join(current_layer_lines))
@@ -96,6 +97,7 @@ def parse_dockerfile(content: str) -> list[ParsedStage]:
 
     if current_stage and current_layer_lines:
         flush_layer(current_stage, " ".join(current_layer_lines))
+
     if stages:
         stages[-1].is_final_stage = True
 
@@ -103,9 +105,8 @@ def parse_dockerfile(content: str) -> list[ParsedStage]:
 
 
 def to_dict(stages: list[ParsedStage]) -> list[dict]:
-    result = []
-    for s in stages:
-        result.append({
+    return [
+        {
             "id": s.id,
             "name": s.name,
             "baseImage": s.base_image,
@@ -122,5 +123,6 @@ def to_dict(stages: list[ParsedStage]) -> list[dict]:
                 }
                 for lyr in s.layers
             ],
-        })
-    return result
+        }
+        for s in stages
+    ]
