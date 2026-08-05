@@ -1,0 +1,318 @@
+{
+  "name": "imageshrink-ai",
+  "displayName": "ImageShrink AI — Docker Image Optimizer",
+  "description": "Analyze Dockerfiles as you type. AI-powered optimization, CVE detection and one-click fixes for smaller, faster, safer images.",
+  "version": "1.0.0",
+  "publisher": "imageshrink",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Linters",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "docker",
+    "dockerfile",
+    "container",
+    "optimization",
+    "security"
+  ],
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#09090B",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Huzaifa4ever/ImageShrink-AI.git"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:dockerfile"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "imageshrink.signIn",
+        "title": "Sign In",
+        "category": "ImageShrink"
+      },
+      {
+        "command": "imageshrink.signOut",
+        "title": "Sign Out",
+        "category": "ImageShrink"
+      },
+      {
+        "command": "imageshrink.analyzeDockerfile",
+        "title": "Analyze Dockerfile",
+        "category": "ImageShrink",
+        "icon": "$(search-fuzzy)"
+      },
+      {
+        "command": "imageshrink.optimizeDockerfile",
+        "title": "Optimize Dockerfile (rewrite with AI)",
+        "category": "ImageShrink",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "imageshrink.createDockerignore",
+        "title": "Create .dockerignore",
+        "category": "ImageShrink"
+      },
+      {
+        "command": "imageshrink.applyOptimized",
+        "title": "Apply Optimized Dockerfile",
+        "category": "ImageShrink"
+      },
+      {
+        "command": "imageshrink.showReport",
+        "title": "Show Last Report",
+        "category": "ImageShrink",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "imageshrink.refresh",
+        "title": "Refresh",
+        "category": "ImageShrink",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "imageshrink.showOutput",
+        "title": "Show Log",
+        "category": "ImageShrink"
+      },
+      {
+        "command": "imageshrink.openSettings",
+        "title": "Open Settings",
+        "category": "ImageShrink",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "imageshrink.openOnWeb",
+        "title": "Open Dashboard on the Web",
+        "category": "ImageShrink",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "imageshrink.openFinding",
+        "title": "Go to Finding",
+        "category": "ImageShrink"
+      },
+      {
+        "command": "imageshrink.openHistoryItem",
+        "title": "Open Analysis",
+        "category": "ImageShrink"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "imageshrink",
+          "title": "ImageShrink AI",
+          "icon": "media/activity-bar.svg"
+        }
+      ]
+    },
+    "views": {
+      "imageshrink": [
+        {
+          "id": "imageshrink.overview",
+          "name": "Overview",
+          "icon": "$(dashboard)"
+        },
+        {
+          "id": "imageshrink.suggestions",
+          "name": "Suggestions",
+          "icon": "$(lightbulb)"
+        },
+        {
+          "id": "imageshrink.history",
+          "name": "History",
+          "icon": "$(history)"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "imageshrink.overview",
+        "contents": "Open a Dockerfile to see its optimization, security and performance scores.\n\n[Analyze Dockerfile](command:imageshrink.analyzeDockerfile)"
+      },
+      {
+        "view": "imageshrink.history",
+        "contents": "Sign in to sync your analyses across VS Code and the web dashboard.\n\n[Sign In](command:imageshrink.signIn)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "imageshrink.refresh",
+          "when": "view == imageshrink.overview || view == imageshrink.history",
+          "group": "navigation@1"
+        },
+        {
+          "command": "imageshrink.openSettings",
+          "when": "view == imageshrink.overview",
+          "group": "navigation@2"
+        },
+        {
+          "command": "imageshrink.openOnWeb",
+          "when": "view == imageshrink.history",
+          "group": "navigation@2"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "imageshrink.analyzeDockerfile",
+          "when": "resourceLangId == dockerfile",
+          "group": "navigation@1"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "imageshrink.analyzeDockerfile",
+          "when": "resourceLangId == dockerfile",
+          "group": "imageshrink@1"
+        },
+        {
+          "command": "imageshrink.optimizeDockerfile",
+          "when": "resourceLangId == dockerfile",
+          "group": "imageshrink@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "imageshrink.openFinding",
+          "when": "false"
+        },
+        {
+          "command": "imageshrink.openHistoryItem",
+          "when": "false"
+        },
+        {
+          "command": "imageshrink.refresh",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "ImageShrink AI",
+      "properties": {
+        "imageshrink.enableAiSuggestions": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Include AI-generated suggestions. Turn this off to rely only on the built-in rules, which never leave your machine."
+        },
+        "imageshrink.enableAutoAnalysis": {
+          "type": "boolean",
+          "default": true,
+          "description": "Analyze Dockerfiles automatically. When off, analysis only runs when you invoke it from the command palette."
+        },
+        "imageshrink.analyzeOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Re-analyze when a Dockerfile is saved."
+        },
+        "imageshrink.analyzeWhileTyping": {
+          "type": "boolean",
+          "default": true,
+          "description": "Re-analyze as you type, after a short pause. Uses the built-in rules only, so it costs nothing and works offline."
+        },
+        "imageshrink.useLocalRulesOnly": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Never contact the ImageShrink backend. Your Dockerfile stays on this machine, and AI features are unavailable."
+        },
+        "imageshrink.useAiBackend": {
+          "type": "boolean",
+          "default": true,
+          "description": "Send Dockerfiles to the ImageShrink backend for AI analysis when you run the Analyze command. Ignored if 'Use Local Rules Only' is on."
+        },
+        "imageshrink.apiUrl": {
+          "type": "string",
+          "default": "http://localhost:8000/api/v1",
+          "description": "ImageShrink API base URL."
+        },
+        "imageshrink.webUrl": {
+          "type": "string",
+          "default": "http://localhost:5173",
+          "description": "ImageShrink website, used for sign-in and the dashboard."
+        },
+        "imageshrink.model": {
+          "type": "string",
+          "default": "",
+          "description": "AI model to request. Leave empty to use the server's default. If the model is busy, the server automatically falls back to another one."
+        },
+        "imageshrink.minimumSeverity": {
+          "type": "string",
+          "enum": [
+            "critical",
+            "high",
+            "medium",
+            "low",
+            "info"
+          ],
+          "default": "info",
+          "description": "Hide findings below this severity."
+        },
+        "imageshrink.diagnosticsSeverity": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warning",
+            "information",
+            "hint"
+          ],
+          "default": "warning",
+          "markdownDescription": "How the most severe findings appear in the Problems panel. Lower severities are always reported one step below this."
+        },
+        "imageshrink.debounceMs": {
+          "type": "number",
+          "default": 400,
+          "minimum": 100,
+          "maximum": 5000,
+          "description": "How long to wait after you stop typing before re-analyzing."
+        },
+        "imageshrink.sendWorkspaceContext": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Include your `.dockerignore` and `package.json` with AI analysis. This makes suggestions much more specific, and both files are sent only when you run the Analyze command."
+        },
+        "imageshrink.telemetry": {
+          "type": "boolean",
+          "default": false,
+          "description": "Send anonymous usage data. Off by default."
+        }
+      }
+    },
+    "jsonValidation": [],
+    "keybindings": [
+      {
+        "command": "imageshrink.analyzeDockerfile",
+        "key": "ctrl+alt+d",
+        "mac": "cmd+alt+d",
+        "when": "resourceLangId == dockerfile"
+      }
+    ]
+  },
+  "scripts": {
+    "sync-shared": "node scripts/sync-shared.mjs",
+    "vsix": "vsce package --no-dependencies --out imageshrink-ai.vsix",
+    "install-local": "npm run vsix && code --install-extension imageshrink-ai.vsix --force",
+    "compile": "npm run sync-shared && node esbuild.mjs",
+    "watch": "npm run sync-shared && node esbuild.mjs --watch",
+    "package": "npm run sync-shared && node esbuild.mjs --production",
+    "typecheck": "npm run sync-shared && tsc --noEmit",
+    "test": "npm run typecheck && node scripts/check-parity.mjs",
+    "vscode:prepublish": "npm run package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.6",
+    "@types/vscode": "^1.95.0",
+    "@vscode/vsce": "^3.2.1",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.3"
+  }
+}

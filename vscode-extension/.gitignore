@@ -1,0 +1,7 @@
+node_modules/
+dist/
+dist-tsc/
+dist-test/
+*.vsix
+
+src/generated/
