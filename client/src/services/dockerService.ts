@@ -1,8 +1,14 @@
 import api from './api';
-import type { AnalysisResult, ApiResponse } from '../types';
+import type {
+  AnalysisResult, ApiResponse, HistoryPage, HistoryQuery, ModelCatalog,
+} from '../types';
 
 export const dockerService = {
-  /** Upload a Dockerfile for AI analysis */
+  getModels: async (probe = false): Promise<ApiResponse<ModelCatalog>> => {
+    const { data } = await api.get<ApiResponse<ModelCatalog>>('/models', { params: { probe } });
+    return data;
+  },
+
   analyzeDockerfile: async (file: File, model: string): Promise<ApiResponse<AnalysisResult>> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -15,19 +21,33 @@ export const dockerService = {
     return data;
   },
 
-  /** Get a single analysis by ID */
   getAnalysis: async (id: string): Promise<ApiResponse<AnalysisResult>> => {
     const { data } = await api.get<ApiResponse<AnalysisResult>>(`/analyze/${id}`);
     return data;
   },
 
-  /** Get all past analyses (history) */
-  getHistory: async (): Promise<ApiResponse<AnalysisResult[]>> => {
-    const { data } = await api.get<ApiResponse<AnalysisResult[]>>('/analyze/history');
+  getHistory: async (query: HistoryQuery = {}): Promise<ApiResponse<HistoryPage>> => {
+    const { data } = await api.get<ApiResponse<HistoryPage>>('/analyze/history', {
+      params: {
+        page: query.page ?? 1,
+        pageSize: query.pageSize ?? 12,
+        sort: query.sort ?? 'newest',
+        source: query.source ?? 'all',
+        ...(query.q ? { q: query.q } : {}),
+        ...(query.favorite !== undefined ? { favorite: query.favorite } : {}),
+      },
+    });
     return data;
   },
 
-  /** Delete an analysis by ID */
+  setFavorite: async (id: string, favorite: boolean): Promise<ApiResponse<{ favorite: boolean }>> => {
+    const { data } = await api.patch<ApiResponse<{ favorite: boolean }>>(
+      `/analyze/${id}/favorite`,
+      { favorite }
+    );
+    return data;
+  },
+
   deleteAnalysis: async (id: string): Promise<ApiResponse<null>> => {
     const { data } = await api.delete<ApiResponse<null>>(`/analyze/${id}`);
     return data;
