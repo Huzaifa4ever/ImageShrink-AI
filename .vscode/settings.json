@@ -1,0 +1,23 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/server/venv/bin/python",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/server"
+  ],
+  "python.analysis.autoSearchPaths": true,
+  "python.envFile": "${workspaceFolder}/server/.env",
+  "python.languageServer": "Pylance",
+
+  "[python]": {
+    "editor.formatOnSave": false
+  },
+
+  "typescript.tsdk": "client/node_modules/typescript/lib",
+
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    "**/node_modules": true,
+    "client/dist": true,
+    "server/venv": true
+  }
+}
