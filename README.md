@@ -7,8 +7,6 @@
 
 ```
 ImageShrink-AI/
-├── AZURE_DEPLOYMENT.md           # Click-by-click Azure portal guide, incl. custom domain
-├── GIT_COMMITS.md                # Ready-to-paste commit plan for the current working tree
 ├── docker-compose.yml            # Local MongoDB
 │
 ├── shared/                       # Single source of truth, read by backend AND extension
