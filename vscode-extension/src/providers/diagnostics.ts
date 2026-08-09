@@ -1,5 +1,3 @@
-
-
 import * as vscode from 'vscode';
 
 import { config } from '../config';
@@ -89,7 +87,7 @@ export class DiagnosticsController implements vscode.Disposable {
       vscode.workspace.onDidSaveTextDocument((document) => {
         if (!isDockerfile(document)) return;
         if (!config.autoAnalysis() || !config.analyzeOnSave()) return;
-        // A save is an explicit act, so it skips the debounce.
+
         void this.analyzeNow(document);
       }),
 
@@ -99,7 +97,6 @@ export class DiagnosticsController implements vscode.Disposable {
         this.state.forget(document.uri);
       }),
 
-      // Severity thresholds and the typing toggle change what should already be on screen.
       config.onChange(() => void this.analyzeAllOpen())
     );
 
@@ -141,8 +138,6 @@ export class DiagnosticsController implements vscode.Disposable {
       const floor = config.minimumSeverity();
       const visible = findings.filter((finding) => meetsSeverity(finding.severity, floor));
 
-      // Scores come from the unfiltered set: hiding low-severity findings is a display
-      // preference, and it should not flatter the score.
       this.state.setFindings(document.uri, visible, engine.score(findings));
       this.publish(document, visible);
       return visible;

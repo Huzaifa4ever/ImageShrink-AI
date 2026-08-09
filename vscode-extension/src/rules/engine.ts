@@ -174,7 +174,7 @@ function ruleBaseImageSize(ctx: Context): Finding[] {
         'large-base-image',
         lex.columnOf(instruction, ref.raw),
         {
-          message: `${ref.raw} is roughly ${currentMb} MB- ${best.image} does the same job in about ${best.sizeMb} MB.`,
+          message: `${ref.raw} is roughly ${currentMb} MB - ${best.image} does the same job in about ${best.sizeMb} MB.`,
           detail: `Estimated saving: ~${savings} MB. Compatibility: ~${best.compatibility}% likely to be a drop-in swap. ${best.note ?? ''}`.trim(),
           replacement: rewriteFrom(instruction, ref, best.image),
           fixKind: FIX_REPLACE,

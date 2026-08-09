@@ -1,25 +1,25 @@
-
 import * as vscode from 'vscode';
 
-import { ApiClient, NetworkDisabled, NotSignedIn } from './api/client';
-import { ApiError, NetworkError } from './api/http';
-import type { AnalysisResult } from './api/types';
-import { SessionStore } from './auth/session';
+import { analyze } from './analysis/analyzer';
+import { clearCache, TRIVY_INSTALL_HINT, trivyVersion } from './analysis/trivy';
 import { config } from './config';
 import { initLogger, log } from './logger';
-import { BaseImageCompletionProvider, COMPLETION_TRIGGERS } from './providers/completion';
 import { ImageShrinkCodeActionProvider } from './providers/codeActions';
+import { BaseImageCompletionProvider, COMPLETION_TRIGGERS } from './providers/completion';
 import { DOCKERFILE_SELECTOR, DiagnosticsController, isDockerfile } from './providers/diagnostics';
 import { ImageShrinkHoverProvider } from './providers/hover';
 import { DOCKERIGNORE_TEMPLATE } from './rules/engine';
 import { AnalysisState } from './state';
-import { HistoryProvider, OverviewProvider, SuggestionsProvider } from './views/sidebar';
 import { ReportPanel } from './views/reportPanel';
+import { OverviewProvider, SecurityProvider, SuggestionsProvider } from './views/sidebar';
 import { gather, writeDockerignore } from './workspace/context';
+
+const OPTIMIZED_SCHEME = 'imageshrink-optimized';
 
 function targetDocument(uri?: vscode.Uri): vscode.TextDocument | undefined {
   if (uri) {
-    return vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri.toString());
+    const match = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri.toString());
+    if (match) return match;
   }
   const active = vscode.window.activeTextEditor?.document;
   if (active && isDockerfile(active)) return active;
@@ -28,77 +28,53 @@ function targetDocument(uri?: vscode.Uri): vscode.TextDocument | undefined {
   return open.length === 1 ? open[0] : undefined;
 }
 
-function reportError(error: unknown, action: string): void {
-  if (error instanceof NotSignedIn) {
-    void vscode.window.showWarningMessage(error.message, 'Sign In').then((choice) => {
-      if (choice === 'Sign In') void vscode.commands.executeCommand('imageshrink.signIn');
-    });
-    return;
-  }
-
-  if (error instanceof NetworkDisabled) {
-    void vscode.window.showWarningMessage(error.message, 'Open Settings').then((choice) => {
-      if (choice === 'Open Settings') {
-        void vscode.commands.executeCommand(
-          'workbench.action.openSettings',
-          'imageshrink.useLocalRulesOnly'
-        );
-      }
-    });
-    return;
-  }
-
-  if (error instanceof ApiError && error.isThrottled) {
-    void vscode.window.showWarningMessage(
-      `ImageShrink: ${error.message}`,
-      'Show Log'
-    ).then((choice) => {
-      if (choice === 'Show Log') log.show();
-    });
-    return;
-  }
-
-  const message = error instanceof Error ? error.message : String(error);
-  log.error(`${action} failed`, error);
-  void vscode.window
-    .showErrorMessage(`ImageShrink could not ${action}: ${message}`, 'Show Log')
-    .then((choice) => {
-      if (choice === 'Show Log') log.show();
-    });
-}
-
 export function activate(context: vscode.ExtensionContext): void {
   initLogger();
   const version = (context.extension.packageJSON as { version?: string }).version ?? '0.0.0';
   log.info(`ImageShrink AI ${version} activated`);
 
   const state = new AnalysisState();
-  const session = new SessionStore(context);
-  const client = new ApiClient(session);
   const diagnostics = new DiagnosticsController(state);
 
-  const overview = new OverviewProvider(state, session);
+  const overview = new OverviewProvider(state);
   const suggestions = new SuggestionsProvider(state);
-  const history = new HistoryProvider(client, session);
+  const security = new SecurityProvider(state);
 
-  const syncSignedInKey = (): void => {
-    void vscode.commands.executeCommand(
-      'setContext',
-      'imageshrink.signedIn',
-      session.isSignedIn
-    );
+  const optimizedContent = new Map<string, string>();
+  const optimizedProvider: vscode.TextDocumentContentProvider = {
+    provideTextDocumentContent: (uri) => optimizedContent.get(uri.path) ?? '',
   };
-  syncSignedInKey();
+
+  const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  statusBar.command = 'imageshrink.showReport';
+
+  const updateStatusBar = (): void => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !isDockerfile(editor.document)) {
+      statusBar.hide();
+      return;
+    }
+    const scores = state.scores(editor.document.uri);
+    const count = state.findings(editor.document.uri).length;
+    statusBar.text = `$(package) ImageShrink ${scores.optimizationScore}/100`;
+    statusBar.tooltip = count
+      ? `${count} suggestion(s). Click for the full report.`
+      : 'No findings. Click for the full report.';
+    statusBar.show();
+  };
 
   context.subscriptions.push(
     state,
-    session,
     diagnostics,
-    session.onDidChangeSession(syncSignedInKey),
+    statusBar,
+    state.onDidChange(updateStatusBar),
+    vscode.window.onDidChangeActiveTextEditor(updateStatusBar),
+
+    vscode.workspace.registerTextDocumentContentProvider(OPTIMIZED_SCHEME, optimizedProvider),
 
     vscode.window.registerTreeDataProvider('imageshrink.overview', overview),
     vscode.window.registerTreeDataProvider('imageshrink.suggestions', suggestions),
-    vscode.window.registerTreeDataProvider('imageshrink.history', history),
+    vscode.window.registerTreeDataProvider('imageshrink.security', security),
 
     vscode.languages.registerCodeActionsProvider(
       DOCKERFILE_SELECTOR,
@@ -113,6 +89,7 @@ export function activate(context: vscode.ExtensionContext): void {
     )
   );
 
+  updateStatusBar();
 
   const runFullAnalysis = async (uri?: vscode.Uri): Promise<void> => {
     const document = targetDocument(uri);
@@ -123,107 +100,129 @@ export function activate(context: vscode.ExtensionContext): void {
 
     await diagnostics.analyzeNow(document);
 
-    if (!config.aiAllowed()) {
-      void vscode.window.showInformationMessage(
-        'ImageShrink: showing built-in rule findings. Enable the AI backend for a full rewrite, size estimate and CVE scan.',
-        'Open Settings'
-      ).then((choice) => {
-        if (choice === 'Open Settings') {
-          void vscode.commands.executeCommand('workbench.action.openSettings', 'imageshrink');
-        }
-      });
-      return;
-    }
-
-    const workspaceContext = config.sendWorkspaceContext()
-      ? await gather(document.uri)
-      : { hasDockerignore: undefined, dockerignore: undefined, packageJson: undefined, bloatCandidates: [] };
+    const workspaceContext = await gather(document.uri);
 
     try {
-      const result = await vscode.window.withProgress(
+      const analysis = await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
-          title: 'ImageShrink: analyzing Dockerfile…',
+          title: 'ImageShrink: analyzing…',
           cancellable: true,
         },
-        async (_progress, token) => {
+        async (progress, token) => {
           const controller = new AbortController();
           token.onCancellationRequested(() => controller.abort());
 
-          return client.analyze(
-            {
-              content: document.getText(),
-              filename: document.isUntitled
-                ? 'Dockerfile'
-                : document.uri.path.split('/').pop() || 'Dockerfile',
-              model: config.model() || undefined,
-              dockerignore: workspaceContext.dockerignore,
+          progress.report({ message: config.trivyEnabled() ? 'scanning base images' : 'checking rules' });
+
+          return analyze({
+            content: document.getText(),
+            filename: document.isUntitled
+              ? 'Dockerfile'
+              : document.uri.path.split('/').pop() || 'Dockerfile',
+            dockerfilePath: document.uri.scheme === 'file' ? document.uri.fsPath : undefined,
+            options: {
               hasDockerignore: workspaceContext.hasDockerignore,
-              packageJson: workspaceContext.packageJson,
+              dockerignore: workspaceContext.dockerignore,
               bloatCandidates: workspaceContext.bloatCandidates,
-              save: true,
-              clientVersion: version,
             },
-            controller.signal
-          );
+            signal: controller.signal,
+          });
         }
       );
 
-      state.setResult(document.uri, result);
-      diagnostics.publish(document, result.ruleFindings ?? []);
-      history.refresh();
-      ReportPanel.show(result, document.uri);
+      state.setAnalysis(document.uri, analysis);
+      diagnostics.publish(document, analysis.findings);
+      ReportPanel.show(analysis, document.uri);
 
-      if (result.scheduling?.fellBack) {
-        log.info(
-          `requested ${result.modelRequested}, answered by ${result.modelUsed} after fallback`
-        );
+      if (analysis.scan.status === 'unavailable') {
+        log.warn(`security scan unavailable: ${analysis.scan.reason}`);
       }
     } catch (error) {
-      if (error instanceof NetworkError && error.message === 'Cancelled.') return;
-      reportError(error, 'analyze this Dockerfile');
+      const message = error instanceof Error ? error.message : String(error);
+      log.error('analysis failed', error);
+      void vscode.window
+        .showErrorMessage(`ImageShrink could not analyze this Dockerfile: ${message}`, 'Show Log')
+        .then((choice) => {
+          if (choice === 'Show Log') log.show();
+        });
     }
+  };
+
+  const ensureAnalysis = async (document: vscode.TextDocument) => {
+    const existing = state.analysis(document.uri);
+    if (existing) return existing;
+    await runFullAnalysis(document.uri);
+    return state.analysis(document.uri);
+  };
+
+  const showDiff = async (uri?: vscode.Uri): Promise<void> => {
+    const document = targetDocument(uri);
+    if (!document) return;
+
+    const analysis = await ensureAnalysis(document);
+    if (!analysis) return;
+
+    const key = document.uri.toString();
+    optimizedContent.set(key, analysis.optimized.content);
+
+    const right = vscode.Uri.from({ scheme: OPTIMIZED_SCHEME, path: key });
+    await vscode.commands.executeCommand(
+      'vscode.diff',
+      document.uri,
+      right,
+      `${analysis.filename} ↔ optimized`,
+      { preview: true }
+    );
   };
 
   const applyOptimized = async (uri?: vscode.Uri): Promise<void> => {
     const document = targetDocument(uri);
     if (!document) return;
 
-    const result = state.result(document.uri);
-    if (!result?.optimizedDockerfile) {
+    const analysis = await ensureAnalysis(document);
+    if (!analysis) return;
+
+    if (!analysis.optimized.changes.length) {
       void vscode.window.showInformationMessage(
-        'ImageShrink: run "Analyze Dockerfile" first to generate an optimized version.'
+        'ImageShrink: nothing to apply — this Dockerfile already passes every rule.'
       );
       return;
     }
 
-    // Replacing the user's file is destructive and not obviously reversible to someone who
-    // does not think in terms of undo, so it is confirmed explicitly.
     const choice = await vscode.window.showWarningMessage(
-      `Replace the contents of ${result.filename} with the optimized version?`,
-      { modal: true, detail: 'You can undo this with Ctrl+Z. The original stays in your history.' },
+      `Replace ${analysis.filename} with the optimized version?`,
+      {
+        modal: true,
+        detail:
+          `${analysis.optimized.changes.length} change(s) will be applied. ` +
+          'You can undo with Ctrl+Z.' +
+          (analysis.optimized.needsReview
+            ? '\n\nThis rewrite includes a commented multi-stage skeleton for you to complete.'
+            : ''),
+      },
       'Replace',
-      'Open as New File'
+      'Show Diff First'
     );
     if (!choice) return;
 
-    if (choice === 'Open as New File') {
-      const doc = await vscode.workspace.openTextDocument({
-        content: result.optimizedDockerfile,
-        language: 'dockerfile',
-      });
-      await vscode.window.showTextDocument(doc);
+    if (choice === 'Show Diff First') {
+      await showDiff(document.uri);
       return;
     }
 
     const edit = new vscode.WorkspaceEdit();
-    const wholeFile = new vscode.Range(
+    const whole = new vscode.Range(
       document.positionAt(0),
       document.positionAt(document.getText().length)
     );
-    edit.replace(document.uri, wholeFile, result.optimizedDockerfile);
+    edit.replace(document.uri, whole, analysis.optimized.content);
     await vscode.workspace.applyEdit(edit);
-    void vscode.window.showInformationMessage('ImageShrink: applied the optimized Dockerfile.');
+
+    void vscode.window.showInformationMessage(
+      `ImageShrink: applied ${analysis.optimized.changes.length} change(s).`
+    );
+    await diagnostics.analyzeNow(document);
   };
 
   const createDockerignore = async (uri?: vscode.Uri, content?: string): Promise<void> => {
@@ -234,7 +233,6 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!created) return;
 
     await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(created));
-    // The finding that prompted this should disappear now, so re-lint.
     await diagnostics.analyzeNow(document);
   };
 
@@ -249,59 +247,59 @@ export function activate(context: vscode.ExtensionContext): void {
     );
   };
 
-  const openHistoryItem = async (id: string): Promise<void> => {
-    try {
-      const result: AnalysisResult = await client.analysis(id);
-      const document = targetDocument();
-      ReportPanel.show(result, document?.uri ?? vscode.Uri.parse('untitled:Dockerfile'));
-    } catch (error) {
-      reportError(error, 'open that analysis');
-    }
-  };
-
-  const showReport = (): void => {
+  const showReport = async (): Promise<void> => {
     const document = targetDocument();
-    const result = document ? state.result(document.uri) : undefined;
-    if (!result || !document) {
-      void vscode.window.showInformationMessage(
-        'ImageShrink: no report yet. Run "Analyze Dockerfile" to generate one.'
-      );
+    if (!document) {
+      void vscode.window.showInformationMessage('ImageShrink: open a Dockerfile first.');
       return;
     }
-    ReportPanel.show(result, document.uri);
+    const analysis = await ensureAnalysis(document);
+    if (analysis) ReportPanel.show(analysis, document.uri);
+  };
+
+  const installTrivy = async (): Promise<void> => {
+    const found = await trivyVersion();
+    if (found) {
+      void vscode.window.showInformationMessage(`ImageShrink: Trivy ${found} is installed and working.`);
+      return;
+    }
+
+    const choice = await vscode.window.showInformationMessage(
+      'Trivy is not installed. It is a single binary that scans your base images for known vulnerabilities. Everything else in ImageShrink works without it.',
+      'Installation Guide',
+      'Open Settings'
+    );
+    if (choice === 'Installation Guide') {
+      void vscode.env.openExternal(
+        vscode.Uri.parse('https://github.com/aquasecurity/trivy#installation')
+      );
+    }
+    if (choice === 'Open Settings') {
+      void vscode.commands.executeCommand('workbench.action.openSettings', 'imageshrink.security');
+    }
+    log.info(TRIVY_INSTALL_HINT);
   };
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('imageshrink.signIn', async () => {
-      await session.signIn();
-      history.refresh();
-      overview.refresh();
-    }),
-    vscode.commands.registerCommand('imageshrink.signOut', async () => {
-      await session.signOut();
-      history.refresh();
-      overview.refresh();
-    }),
     vscode.commands.registerCommand('imageshrink.analyzeDockerfile', runFullAnalysis),
-    vscode.commands.registerCommand('imageshrink.optimizeDockerfile', runFullAnalysis),
+    vscode.commands.registerCommand('imageshrink.optimizeDockerfile', showDiff),
+    vscode.commands.registerCommand('imageshrink.showDiff', showDiff),
     vscode.commands.registerCommand('imageshrink.applyOptimized', applyOptimized),
     vscode.commands.registerCommand('imageshrink.createDockerignore', createDockerignore),
     vscode.commands.registerCommand('imageshrink.openFinding', openFinding),
-    vscode.commands.registerCommand('imageshrink.openHistoryItem', openHistoryItem),
     vscode.commands.registerCommand('imageshrink.showReport', showReport),
+    vscode.commands.registerCommand('imageshrink.installTrivy', installTrivy),
     vscode.commands.registerCommand('imageshrink.showOutput', () => log.show()),
-    vscode.commands.registerCommand('imageshrink.refresh', () => {
-      history.refresh();
+    vscode.commands.registerCommand('imageshrink.refresh', async () => {
+      clearCache();
       overview.refresh();
       suggestions.refresh();
+      security.refresh();
       const document = targetDocument();
-      if (document) void diagnostics.analyzeNow(document);
+      if (document) await diagnostics.analyzeNow(document);
     }),
     vscode.commands.registerCommand('imageshrink.openSettings', () => {
       void vscode.commands.executeCommand('workbench.action.openSettings', 'imageshrink');
-    }),
-    vscode.commands.registerCommand('imageshrink.openOnWeb', () => {
-      void vscode.env.openExternal(vscode.Uri.parse(`${config.webUrl()}/history`));
     })
   );
 }

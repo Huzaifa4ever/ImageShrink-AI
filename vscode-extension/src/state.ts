@@ -1,15 +1,14 @@
-
 import * as vscode from 'vscode';
 
-import type { AnalysisResult } from './api/types';
+import type { LocalAnalysis } from './analysis/types';
 import type { Finding, Scores } from './rules/catalog';
 
 export interface DocumentState {
-
   findings: Finding[];
   scores: Scores;
-  result: AnalysisResult | undefined;
-  analyzedAt: number;
+
+  analysis: LocalAnalysis | undefined;
+  updatedAt: number;
 }
 
 const EMPTY_SCORES: Scores = {
@@ -39,8 +38,8 @@ export class AnalysisState {
     return this.get(uri)?.scores ?? EMPTY_SCORES;
   }
 
-  result(uri: vscode.Uri): AnalysisResult | undefined {
-    return this.get(uri)?.result;
+  analysis(uri: vscode.Uri): LocalAnalysis | undefined {
+    return this.get(uri)?.analysis;
   }
 
   setFindings(uri: vscode.Uri, findings: Finding[], scores: Scores): void {
@@ -49,20 +48,19 @@ export class AnalysisState {
     this.documents.set(key, {
       findings,
       scores,
-      result: existing?.result,
-      analyzedAt: Date.now(),
+
+      analysis: existing?.analysis,
+      updatedAt: Date.now(),
     });
     this.changeEmitter.fire(uri);
   }
 
-  setResult(uri: vscode.Uri, result: AnalysisResult): void {
-    const key = uri.toString();
-    const existing = this.documents.get(key);
-    this.documents.set(key, {
-      findings: result.ruleFindings ?? existing?.findings ?? [],
-      scores: result.ruleScores ?? existing?.scores ?? EMPTY_SCORES,
-      result,
-      analyzedAt: Date.now(),
+  setAnalysis(uri: vscode.Uri, analysis: LocalAnalysis): void {
+    this.documents.set(uri.toString(), {
+      findings: analysis.findings,
+      scores: analysis.scores,
+      analysis,
+      updatedAt: Date.now(),
     });
     this.changeEmitter.fire(uri);
   }

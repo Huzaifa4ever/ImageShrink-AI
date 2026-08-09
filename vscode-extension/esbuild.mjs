@@ -1,5 +1,3 @@
-
-
 import * as esbuild from 'esbuild';
 
 const production = process.argv.includes('--production');
@@ -7,7 +5,7 @@ const watch = process.argv.includes('--watch');
 
 const problemMatcherPlugin = {
   name: 'problem-matcher',
-  setup(build) {# Everything is bundled into dist/extension.js, so no sources ship.
+  setup(build) {
     build.onStart(() => console.log('[build] started'));
     build.onEnd((result) => {
       for (const { text, location } of result.errors) {

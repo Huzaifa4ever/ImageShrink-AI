@@ -1,4 +1,3 @@
-
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,6 +8,8 @@ import * as esbuild from 'esbuild';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const extensionRoot = resolve(here, '..');
+
+execFileSync('node', [join(here, 'sync-shared.mjs')], { stdio: 'ignore' });
 const serverRoot = resolve(extensionRoot, '..', 'server');
 
 const CASES = [
@@ -128,7 +129,6 @@ CMD ["node", "x.js"]
   ['garbage', '}{ not a dockerfile at all\nrandom text\n', {}],
 ];
 
-// Bundle the TS engine into something Node can run directly.
 const outfile = join(mkdtempSync(join(tmpdir(), 'imageshrink-parity-')), 'engine.mjs');
 await esbuild.build({
   entryPoints: [join(extensionRoot, 'src', 'rules', 'engine.ts')],
@@ -158,7 +158,6 @@ function normalize(finding) {
   };
 }
 
-// Ask Python for its verdict on every case in one subprocess.
 const payload = JSON.stringify(
   CASES.map(([label, content, options]) => ({ label, content, options }))
 );
@@ -210,7 +209,6 @@ for (const [index, [label, content, options]] of CASES.entries()) {
   if (JSON.stringify(tsIds) !== JSON.stringify(pyIds)) {
     problems.push(`  rules differ\n    ts: ${tsIds.join(', ') || '(none)'}\n    py: ${pyIds.join(', ') || '(none)'}`);
   } else {
-    // Same rules on the same lines - now compare the details field by field.
     for (const [i, tsFinding] of tsFindings.entries()) {
       const pyFinding = pyFindings[i];
       for (const key of Object.keys(tsFinding)) {

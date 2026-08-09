@@ -1,7 +1,7 @@
 {
   "name": "imageshrink-ai",
-  "displayName": "ImageShrink AI — Docker Image Optimizer",
-  "description": "Analyze Dockerfiles as you type. AI-powered optimization, CVE detection and one-click fixes for smaller, faster, safer images.",
+  "displayName": "ImageShrink",
+  "description": "Lint Dockerfiles as you type. Smaller base images, one-click fixes, CVE scanning and size estimates - entirely offline, no account needed.",
   "version": "1.0.0",
   "publisher": "imageshrink",
   "license": "MIT",
@@ -17,8 +17,8 @@
     "docker",
     "dockerfile",
     "container",
-    "optimization",
-    "security"
+    "security",
+    "optimization"
   ],
   "icon": "media/icon.png",
   "galleryBanner": {
@@ -29,22 +29,26 @@
     "type": "git",
     "url": "https://github.com/Huzaifa4ever/ImageShrink-AI.git"
   },
+  "bugs": {
+    "url": "https://github.com/Huzaifa4ever/ImageShrink-AI/issues"
+  },
+  "homepage": "https://github.com/Huzaifa4ever/ImageShrink-AI/tree/main/vscode-extension#readme",
   "main": "./dist/extension.js",
   "activationEvents": [
     "onLanguage:dockerfile"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Dockerfile linting works everywhere. Security scanning runs the Trivy executable and image size measurement runs Docker, so both are disabled in an untrusted workspace."
+    },
+    "virtualWorkspaces": {
+      "supported": "limited",
+      "description": "Linting works on virtual files. Security scanning and size measurement need a real file system."
+    }
+  },
   "contributes": {
     "commands": [
-      {
-        "command": "imageshrink.signIn",
-        "title": "Sign In",
-        "category": "ImageShrink"
-      },
-      {
-        "command": "imageshrink.signOut",
-        "title": "Sign Out",
-        "category": "ImageShrink"
-      },
       {
         "command": "imageshrink.analyzeDockerfile",
         "title": "Analyze Dockerfile",
@@ -53,14 +57,15 @@
       },
       {
         "command": "imageshrink.optimizeDockerfile",
-        "title": "Optimize Dockerfile (rewrite with AI)",
+        "title": "Preview Optimized Dockerfile",
         "category": "ImageShrink",
-        "icon": "$(sparkle)"
+        "icon": "$(diff)"
       },
       {
-        "command": "imageshrink.createDockerignore",
-        "title": "Create .dockerignore",
-        "category": "ImageShrink"
+        "command": "imageshrink.showDiff",
+        "title": "Compare With Optimized",
+        "category": "ImageShrink",
+        "icon": "$(diff)"
       },
       {
         "command": "imageshrink.applyOptimized",
@@ -68,10 +73,20 @@
         "category": "ImageShrink"
       },
       {
+        "command": "imageshrink.createDockerignore",
+        "title": "Create .dockerignore",
+        "category": "ImageShrink"
+      },
+      {
         "command": "imageshrink.showReport",
-        "title": "Show Last Report",
+        "title": "Show Report",
         "category": "ImageShrink",
         "icon": "$(graph)"
+      },
+      {
+        "command": "imageshrink.installTrivy",
+        "title": "Check Security Scanner",
+        "category": "ImageShrink"
       },
       {
         "command": "imageshrink.refresh",
@@ -91,19 +106,8 @@
         "icon": "$(gear)"
       },
       {
-        "command": "imageshrink.openOnWeb",
-        "title": "Open Dashboard on the Web",
-        "category": "ImageShrink",
-        "icon": "$(link-external)"
-      },
-      {
         "command": "imageshrink.openFinding",
         "title": "Go to Finding",
-        "category": "ImageShrink"
-      },
-      {
-        "command": "imageshrink.openHistoryItem",
-        "title": "Open Analysis",
         "category": "ImageShrink"
       }
     ],
@@ -111,7 +115,7 @@
       "activitybar": [
         {
           "id": "imageshrink",
-          "title": "ImageShrink AI",
+          "title": "ImageShrink",
           "icon": "media/activity-bar.svg"
         }
       ]
@@ -129,37 +133,32 @@
           "icon": "$(lightbulb)"
         },
         {
-          "id": "imageshrink.history",
-          "name": "History",
-          "icon": "$(history)"
+          "id": "imageshrink.security",
+          "name": "Security",
+          "icon": "$(shield)"
         }
       ]
     },
     "viewsWelcome": [
       {
         "view": "imageshrink.overview",
-        "contents": "Open a Dockerfile to see its optimization, security and performance scores.\n\n[Analyze Dockerfile](command:imageshrink.analyzeDockerfile)"
+        "contents": "Open a Dockerfile to see its optimization, security and performance scores.\n\nSuggestions appear as you type, with no account and no network access.\n\n[Analyze Dockerfile](command:imageshrink.analyzeDockerfile)"
       },
       {
-        "view": "imageshrink.history",
-        "contents": "Sign in to sync your analyses across VS Code and the web dashboard.\n\n[Sign In](command:imageshrink.signIn)"
+        "view": "imageshrink.security",
+        "contents": "Base image vulnerability scanning uses [Trivy](https://trivy.dev), a single binary you install separately.\n\n[Check Security Scanner](command:imageshrink.installTrivy)"
       }
     ],
     "menus": {
       "view/title": [
         {
           "command": "imageshrink.refresh",
-          "when": "view == imageshrink.overview || view == imageshrink.history",
+          "when": "view == imageshrink.overview || view == imageshrink.security",
           "group": "navigation@1"
         },
         {
           "command": "imageshrink.openSettings",
           "when": "view == imageshrink.overview",
-          "group": "navigation@2"
-        },
-        {
-          "command": "imageshrink.openOnWeb",
-          "when": "view == imageshrink.history",
           "group": "navigation@2"
         }
       ],
@@ -177,9 +176,14 @@
           "group": "imageshrink@1"
         },
         {
-          "command": "imageshrink.optimizeDockerfile",
+          "command": "imageshrink.showDiff",
           "when": "resourceLangId == dockerfile",
           "group": "imageshrink@2"
+        },
+        {
+          "command": "imageshrink.createDockerignore",
+          "when": "resourceLangId == dockerfile",
+          "group": "imageshrink@3"
         }
       ],
       "commandPalette": [
@@ -188,106 +192,135 @@
           "when": "false"
         },
         {
-          "command": "imageshrink.openHistoryItem",
-          "when": "false"
-        },
-        {
           "command": "imageshrink.refresh",
           "when": "false"
         }
       ]
     },
-    "configuration": {
-      "title": "ImageShrink AI",
-      "properties": {
-        "imageshrink.enableAiSuggestions": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "Include AI-generated suggestions. Turn this off to rely only on the built-in rules, which never leave your machine."
-        },
-        "imageshrink.enableAutoAnalysis": {
-          "type": "boolean",
-          "default": true,
-          "description": "Analyze Dockerfiles automatically. When off, analysis only runs when you invoke it from the command palette."
-        },
-        "imageshrink.analyzeOnSave": {
-          "type": "boolean",
-          "default": true,
-          "description": "Re-analyze when a Dockerfile is saved."
-        },
-        "imageshrink.analyzeWhileTyping": {
-          "type": "boolean",
-          "default": true,
-          "description": "Re-analyze as you type, after a short pause. Uses the built-in rules only, so it costs nothing and works offline."
-        },
-        "imageshrink.useLocalRulesOnly": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "Never contact the ImageShrink backend. Your Dockerfile stays on this machine, and AI features are unavailable."
-        },
-        "imageshrink.useAiBackend": {
-          "type": "boolean",
-          "default": true,
-          "description": "Send Dockerfiles to the ImageShrink backend for AI analysis when you run the Analyze command. Ignored if 'Use Local Rules Only' is on."
-        },
-        "imageshrink.apiUrl": {
-          "type": "string",
-          "default": "http://localhost:8000/api/v1",
-          "description": "ImageShrink API base URL."
-        },
-        "imageshrink.webUrl": {
-          "type": "string",
-          "default": "http://localhost:5173",
-          "description": "ImageShrink website, used for sign-in and the dashboard."
-        },
-        "imageshrink.model": {
-          "type": "string",
-          "default": "",
-          "description": "AI model to request. Leave empty to use the server's default. If the model is busy, the server automatically falls back to another one."
-        },
-        "imageshrink.minimumSeverity": {
-          "type": "string",
-          "enum": [
-            "critical",
-            "high",
-            "medium",
-            "low",
-            "info"
-          ],
-          "default": "info",
-          "description": "Hide findings below this severity."
-        },
-        "imageshrink.diagnosticsSeverity": {
-          "type": "string",
-          "enum": [
-            "error",
-            "warning",
-            "information",
-            "hint"
-          ],
-          "default": "warning",
-          "markdownDescription": "How the most severe findings appear in the Problems panel. Lower severities are always reported one step below this."
-        },
-        "imageshrink.debounceMs": {
-          "type": "number",
-          "default": 400,
-          "minimum": 100,
-          "maximum": 5000,
-          "description": "How long to wait after you stop typing before re-analyzing."
-        },
-        "imageshrink.sendWorkspaceContext": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "Include your `.dockerignore` and `package.json` with AI analysis. This makes suggestions much more specific, and both files are sent only when you run the Analyze command."
-        },
-        "imageshrink.telemetry": {
-          "type": "boolean",
-          "default": false,
-          "description": "Send anonymous usage data. Off by default."
+    "configuration": [
+      {
+        "title": "ImageShrink",
+        "properties": {
+          "imageshrink.enableAutoAnalysis": {
+            "type": "boolean",
+            "default": true,
+            "order": 1,
+            "description": "Analyze Dockerfiles automatically. When off, analysis only runs when you invoke it."
+          },
+          "imageshrink.analyzeWhileTyping": {
+            "type": "boolean",
+            "default": true,
+            "order": 2,
+            "description": "Re-check as you type, after a short pause."
+          },
+          "imageshrink.analyzeOnSave": {
+            "type": "boolean",
+            "default": true,
+            "order": 3,
+            "description": "Re-check when a Dockerfile is saved."
+          },
+          "imageshrink.debounceMs": {
+            "type": "number",
+            "default": 400,
+            "minimum": 100,
+            "maximum": 5000,
+            "order": 4,
+            "description": "How long to wait after you stop typing before re-checking, in milliseconds."
+          },
+          "imageshrink.minimumSeverity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low",
+              "info"
+            ],
+            "default": "info",
+            "order": 5,
+            "description": "Hide findings below this severity."
+          },
+          "imageshrink.diagnosticsSeverity": {
+            "type": "string",
+            "enum": [
+              "error",
+              "warning",
+              "information",
+              "hint"
+            ],
+            "default": "warning",
+            "order": 6,
+            "markdownDescription": "How the most severe findings appear in the Problems panel. Less severe findings are reported one step below this."
+          }
+        }
+      },
+      {
+        "title": "ImageShrink › Security",
+        "properties": {
+          "imageshrink.security.enabled": {
+            "type": "boolean",
+            "default": true,
+            "order": 1,
+            "markdownDescription": "Scan base images for known vulnerabilities using [Trivy](https://trivy.dev). Requires Trivy to be installed; everything else works without it."
+          },
+          "imageshrink.security.trivyPath": {
+            "type": "string",
+            "default": "trivy",
+            "order": 2,
+            "description": "Path to the Trivy executable. Leave as 'trivy' if it is on your PATH."
+          },
+          "imageshrink.security.severities": {
+            "type": "string",
+            "default": "CRITICAL,HIGH,MEDIUM,LOW",
+            "order": 3,
+            "description": "Severities to report, comma separated."
+          },
+          "imageshrink.security.maxImages": {
+            "type": "number",
+            "default": 4,
+            "minimum": 1,
+            "maximum": 20,
+            "order": 4,
+            "description": "Most base images to scan in one analysis."
+          },
+          "imageshrink.security.maxFindings": {
+            "type": "number",
+            "default": 100,
+            "minimum": 10,
+            "maximum": 1000,
+            "order": 5,
+            "description": "Most vulnerabilities to display, highest severity first."
+          },
+          "imageshrink.security.timeoutSeconds": {
+            "type": "number",
+            "default": 120,
+            "minimum": 10,
+            "maximum": 900,
+            "order": 6,
+            "description": "How long to allow a single scan before giving up."
+          },
+          "imageshrink.security.cacheMinutes": {
+            "type": "number",
+            "default": 60,
+            "minimum": 0,
+            "maximum": 1440,
+            "order": 7,
+            "description": "How long to reuse a scan result for the same image. 0 disables caching."
+          }
+        }
+      },
+      {
+        "title": "ImageShrink › Size",
+        "properties": {
+          "imageshrink.size.useDocker": {
+            "type": "boolean",
+            "default": true,
+            "order": 1,
+            "markdownDescription": "Ask the local Docker daemon for the real size of base images you have already pulled. Images are never pulled - if one is not present, a published estimate is used instead."
+          }
         }
       }
-    },
-    "jsonValidation": [],
+    ],
     "keybindings": [
       {
         "command": "imageshrink.analyzeDockerfile",
@@ -299,13 +332,13 @@
   },
   "scripts": {
     "sync-shared": "node scripts/sync-shared.mjs",
-    "vsix": "vsce package --no-dependencies --out imageshrink-ai.vsix",
-    "install-local": "npm run vsix && code --install-extension imageshrink-ai.vsix --force",
     "compile": "npm run sync-shared && node esbuild.mjs",
     "watch": "npm run sync-shared && node esbuild.mjs --watch",
     "package": "npm run sync-shared && node esbuild.mjs --production",
     "typecheck": "npm run sync-shared && tsc --noEmit",
-    "test": "npm run typecheck && node scripts/check-parity.mjs",
+    "test": "npm run typecheck && node scripts/check-parity.mjs && node scripts/check-standalone.mjs",
+    "vsix": "vsce package --no-dependencies --out imageshrink-ai.vsix",
+    "install-local": "npm run vsix && code --install-extension imageshrink-ai.vsix --force",
     "vscode:prepublish": "npm run package"
   },
   "devDependencies": {

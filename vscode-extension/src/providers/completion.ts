@@ -1,4 +1,3 @@
-
 import * as vscode from 'vscode';
 
 import * as cat from '../rules/catalog';
@@ -42,7 +41,7 @@ function buildItem(
 
   item.range = range;
   item.filterText = recommendation.image;
-  // Recommended first, then by ascending size - smaller is better, and that is the point.
+
   item.sortText = `${recommendation.recommended ? '0' : '1'}${String(rank).padStart(3, '0')}`;
   if (recommendation.recommended) {
     item.preselect = true;

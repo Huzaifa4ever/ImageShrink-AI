@@ -1,4 +1,3 @@
-
 import * as vscode from 'vscode';
 
 import { log } from '../logger';
@@ -40,7 +39,6 @@ const MANIFESTS = [
 const MAX_FILE_BYTES = 200_000;
 
 export interface WorkspaceContext {
-
   contextDir: vscode.Uri | undefined;
   hasDockerignore: boolean | undefined;
   dockerignore: string | undefined;
@@ -85,7 +83,6 @@ function alreadyIgnored(name: string, dockerignore: string | undefined): boolean
     });
 }
 
-
 export async function gather(dockerfileUri: vscode.Uri): Promise<WorkspaceContext> {
   const empty: WorkspaceContext = {
     contextDir: undefined,
@@ -119,7 +116,7 @@ export async function gather(dockerfileUri: vscode.Uri): Promise<WorkspaceContex
     );
     const bloatCandidates = present
       .filter((name): name is string => name !== undefined)
-      // Already excluded is not a problem worth reporting.
+
       .filter((name) => !alreadyIgnored(name, dockerignore));
 
     return { contextDir, hasDockerignore, dockerignore, packageJson, bloatCandidates };

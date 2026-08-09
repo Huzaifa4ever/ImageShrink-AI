@@ -5,7 +5,6 @@ import * as vscode from 'vscode';
 let channel: vscode.LogOutputChannel | undefined;
 
 export function initLogger(): vscode.LogOutputChannel {
-
   channel ??= vscode.window.createOutputChannel('ImageShrink AI', { log: true });
   return channel;
 }

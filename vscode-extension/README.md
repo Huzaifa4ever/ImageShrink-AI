@@ -1,19 +1,20 @@
-# ImageShrink AI - Docker Image Optimizer for VS Code
+# ImageShrink - Docker Image Optimizer for VS Code
 
 Build smaller, faster, safer Docker images without leaving your editor.
 
-ImageShrink analyses your Dockerfile as you type, explains what each problem costs you in
+ImageShrink checks your Dockerfile as you type, explains what each problem costs you in
 megabytes, and fixes most of them with one click.
+
+**No account. No sign-in. No servers.** Everything runs on your machine.
 
 ---
 
 ## What it does
 
-### Linting as you type
+### Checks your Dockerfile as you type
 
-Open a Dockerfile and findings appear immediately - no command to run, no refresh. The
-built-in rule engine runs entirely on your machine, so it works offline, costs nothing, and
-adds no latency to typing.
+Open a Dockerfile and findings appear immediately - no command to run, no refresh. The rule
+engine is bundled into the extension, so it works offline and adds no latency to typing.
 
 24 rules covering:
 
@@ -21,61 +22,80 @@ adds no latency to typing.
 |---|---|
 | **Size** | oversized base images, missing multi-stage builds, `devDependencies` in production, apt/pip/apk caches left in layers, `COPY . .` with no `.dockerignore` |
 | **Security** | unpinned and floating tags, containers running as root, hardcoded credentials, `curl \| sh`, `sudo` in images |
-| **Performance** | source copied before dependency installs (the single biggest build-time mistake), `apt-get update` stranded in its own layer, avoidable layer count |
+| **Performance** | source copied before dependency installs (the biggest build-time mistake), `apt-get update` stranded in its own layer, avoidable layer count |
 
-### Quick fixes
+### Fixes them with one click
 
 Every finding that can be fixed exactly offers a light-bulb fix, like ESLint. Nothing is
 guessed: if the engine cannot produce a correct replacement, it offers no fix rather than a
 plausible-looking one.
 
-- `FROM node` → `FROM node:22-alpine`, with the size difference and a compatibility estimate
+- `FROM node` → `FROM node:22.11-alpine`, with the size difference and a compatibility estimate
 - `RUN npm install` → `RUN npm ci --omit=dev`
 - `apt-get install …` → adds `--no-install-recommends` and cleans up `/var/lib/apt/lists`
-- Missing `USER` → inserts a correct non-root block for *your* base image (`USER node` for
-  Node images, busybox `adduser` on Alpine, `USER 65534:65534` on distroless and scratch)
+- Missing `USER` → inserts a correct non-root block for *your* base image (`USER node` on Node
+  images, busybox `adduser` on Alpine, `USER 65534:65534` on distroless and scratch)
 - No `.dockerignore` → generates one
 - **Fix all** applies every safe fix at once, skipping any that would overlap
 
-### Hovers that explain
+### Explains itself
 
-Hover any flagged instruction to see the problem, why it matters, the estimated image cost,
-what fixing it saves, the security and performance consequences, and a link to the relevant
-Docker documentation.
+Hover any flagged instruction for the problem, why it matters, the estimated image cost, what
+fixing it saves, the security and performance consequences, and a link to the relevant Docker
+documentation.
 
-### IntelliSense for base images
+### Suggests better base images
 
-Type `FROM no` and get `node:22-alpine` **before** `node:22`, annotated with its size, the
+Type `FROM no` and get `node:22.11-alpine` **before** `node:22`, annotated with its size, the
 saving, and how likely the swap is to be drop-in - so the smaller option is the obvious one
 rather than the one you have to already know about.
 
-### Full AI analysis
+### Estimates image size
 
-`ImageShrink: Analyze Dockerfile` (`Ctrl+Alt+D`) sends your Dockerfile, plus your
-`.dockerignore` and dependency manifest for context, and returns:
+Shows the size before and after applying every fix, broken down into the base image and what
+each `RUN` and `COPY` adds.
 
-- a production-ready multi-stage rewrite you can apply or open side by side
-- estimated size before and after, with the model's stated confidence
-- a Trivy CVE scan of your base images, grouped by severity
-- a layer-by-layer breakdown of what changed and why
+If you have Docker installed and the base image already pulled, the base size is **measured**
+from your local daemon. Otherwise it uses a published figure. Either way the report says which,
+because a guess presented as a measurement is worse than no number at all. Images are never
+pulled - that is a large download you did not ask for.
 
-Results are saved to your account and appear in both the sidebar and the web dashboard.
+### Scans for vulnerabilities
 
-### Sidebar
+`ImageShrink: Analyze Dockerfile` scans your base images for known CVEs using
+**[Trivy](https://trivy.dev)**, grouped by severity, with the fixed version where one exists.
 
-An Activity Bar panel with your optimization, security and performance scores, the image size
-estimate, every current suggestion (click to jump to the line), and your recent analyses from
-both VS Code and the web.
+Trivy is a single binary you install separately. If it is missing, the extension says so plainly
+- it never reports an unscanned image as clean.
+
+### Generates an optimized Dockerfile
+
+Applies every available fix, reorders `COPY` and install steps for layer caching, and shows the
+result as a side-by-side diff you can apply or copy.
+
+This is a deterministic rewrite from the rules - the same input always produces the same output,
+and every change is listed. It will not restructure a single-stage build into a multi-stage one,
+because that needs knowledge of which build outputs matter. It leaves a commented skeleton and
+flags the result for review instead of guessing.
 
 ---
 
 ## Installing
 
-This extension is **not on the Visual Studio Marketplace** - searching the Extensions view will
-not find it. It is built and installed from the
-[ImageShrink-AI repository](https://github.com/Huzaifa4ever/ImageShrink-AI).
+Requires **VS Code 1.95+**. Optional: **Trivy** for CVE scanning, **Docker** for measured base
+image sizes.
 
-Requires Node.js 20+, VS Code 1.95+, and the `code` command on your PATH.
+### From the Marketplace
+
+Search for **ImageShrink** in the Extensions view, or:
+
+```
+ext install imageshrink.imageshrink-ai
+```
+
+### From source
+
+Requires Node.js 20+ and the `code` command on your PATH.
 
 ```bash
 git clone https://github.com/Huzaifa4ever/ImageShrink-AI.git
@@ -84,70 +104,24 @@ npm install
 npm run install-local
 ```
 
-Then run **Developer: Reload Window** from the command palette.
+Then run **Developer: Reload Window**.
 
-`install-local` packages the extension and installs it with `--force`, so re-running it after a
-`git pull` upgrades in place.
+### Enabling CVE scanning
 
-### Without the `code` command
+Install Trivy - see the [installation guide](https://github.com/aquasecurity/trivy#installation).
 
-Build the package and install it through the UI - Extensions view → `…` menu →
-**Install from VSIX…**:
+On Ubuntu/Debian:
 
 ```bash
-npm run vsix        # → imageshrink-ai.vsix
+sudo apt-get install -y wget gnupg
+wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee /etc/apt/sources.list.d/trivy.list
+sudo apt-get update && sudo apt-get install -y trivy
 ```
 
-### Developing
+On macOS: `brew install trivy`
 
-Open the `vscode-extension` folder in VS Code and press <kbd>F5</kbd> to launch an Extension
-Development Host with the extension loaded. `npm run watch` rebuilds as you edit.
-
-The extension reads its rule data from `shared/` at the repository root, copied in at build time
-by `scripts/sync-shared.mjs`, so it must be built from inside a checkout.
-
-## Getting started
-
-1. Install as above and reload the window.
-2. Open a Dockerfile - linting starts straight away, no account needed.
-3. For AI analysis, run **ImageShrink: Sign In**. A code appears; approve it in your browser.
-
-Sign-in uses the OAuth device flow, so it works the same over SSH, in Dev Containers and in
-Codespaces. Your token is stored in the OS keychain via VS Code's `SecretStorage` - never in a
-settings file and never on disk in clear.
-
----
-
-## Settings
-
-| Setting | Default | What it does |
-|---|---|---|
-| `imageshrink.useLocalRulesOnly` | `false` | Never contact the backend. Nothing leaves your machine. Overrides every setting below. |
-| `imageshrink.enableAiSuggestions` | `true` | Include AI suggestions |
-| `imageshrink.useAiBackend` | `true` | Allow full AI analysis on demand |
-| `imageshrink.enableAutoAnalysis` | `true` | Analyse automatically |
-| `imageshrink.analyzeWhileTyping` | `true` | Re-lint after a pause in typing |
-| `imageshrink.analyzeOnSave` | `true` | Re-lint on save |
-| `imageshrink.sendWorkspaceContext` | `true` | Include `.dockerignore` and `package.json` with AI analysis |
-| `imageshrink.minimumSeverity` | `info` | Hide findings below this severity |
-| `imageshrink.diagnosticsSeverity` | `warning` | How findings appear in the Problems panel |
-| `imageshrink.debounceMs` | `400` | Pause before re-linting |
-| `imageshrink.model` | *(server default)* | Preferred AI model |
-| `imageshrink.apiUrl` | `http://localhost:8000/api/v1` | Backend URL |
-| `imageshrink.webUrl` | `http://localhost:5173` | Website URL |
-| `imageshrink.telemetry` | `false` | Anonymous usage data. Off by default. |
-
-## What gets sent, and when
-
-- **Linting** - nothing. It runs locally.
-- **`Analyze Dockerfile`** - your Dockerfile, and (if `sendWorkspaceContext` is on) your
-  `.dockerignore` and dependency manifest. Only when you invoke the command.
-- **`useLocalRulesOnly`** - a hard switch. With it on, the extension makes no network requests
-  at all, including sign-in.
-
-Size figures are estimates derived from typical image sizes, not measurements of your build.
-They are labelled as estimates everywhere they appear. Build both images to compare for
-certain.
+Then run **ImageShrink: Check Security Scanner** to confirm it is detected.
 
 ---
 
@@ -156,17 +130,85 @@ certain.
 | Command | Keybinding |
 |---|---|
 | ImageShrink: Analyze Dockerfile | `Ctrl+Alt+D` / `Cmd+Alt+D` |
-| ImageShrink: Optimize Dockerfile (rewrite with AI) | |
+| ImageShrink: Preview Optimized Dockerfile | |
 | ImageShrink: Apply Optimized Dockerfile | |
 | ImageShrink: Create .dockerignore | |
-| ImageShrink: Show Last Report | |
-| ImageShrink: Sign In / Sign Out | |
+| ImageShrink: Show Report | |
+| ImageShrink: Check Security Scanner | |
 | ImageShrink: Show Log | |
 
-## Requirements
+---
 
-The AI features need an ImageShrink backend. Set `imageshrink.apiUrl` to your instance. The
-rule engine, quick fixes, hovers and IntelliSense need nothing - no account, no network.
+## Settings
+
+| Setting | Default | What it does |
+|---|---|---|
+| `imageshrink.enableAutoAnalysis` | `true` | Check Dockerfiles automatically |
+| `imageshrink.analyzeWhileTyping` | `true` | Re-check after a pause in typing |
+| `imageshrink.analyzeOnSave` | `true` | Re-check on save |
+| `imageshrink.debounceMs` | `400` | Pause before re-checking |
+| `imageshrink.minimumSeverity` | `info` | Hide findings below this severity |
+| `imageshrink.diagnosticsSeverity` | `warning` | How findings appear in the Problems panel |
+| `imageshrink.security.enabled` | `true` | Scan base images with Trivy |
+| `imageshrink.security.trivyPath` | `trivy` | Path to the Trivy executable |
+| `imageshrink.security.severities` | `CRITICAL,HIGH,MEDIUM,LOW` | Severities to report |
+| `imageshrink.security.maxImages` | `4` | Most base images scanned per analysis |
+| `imageshrink.security.maxFindings` | `100` | Most CVEs displayed |
+| `imageshrink.security.timeoutSeconds` | `120` | Scan timeout |
+| `imageshrink.security.cacheMinutes` | `60` | How long to reuse a scan result |
+| `imageshrink.size.useDocker` | `true` | Measure base image sizes with local Docker |
+
+---
+
+## Privacy
+
+**This extension sends nothing anywhere.** There is no account, no telemetry, no analytics, and
+no backend. It has no network code of its own at all.
+
+Two optional features run programs already on your machine:
+
+- **Trivy** (`imageshrink.security.enabled`) reads your base image names and queries its
+  vulnerability database. Trivy contacts image registries to fetch image metadata - that is
+  Trivy's own network access, under its own configuration, not the extension's.
+- **Docker** (`imageshrink.size.useDocker`) is asked for the size of images you have already
+  pulled. It never pulls anything.
+
+Turn either off and the extension is completely offline.
+
+Size figures are estimates derived from typical image sizes unless the report says *measured*.
+Build both images to compare for certain.
+
+---
+
+## Limitations
+
+Worth knowing before you rely on it:
+
+- **Size figures are estimates.** Layer sizes are heuristics based on typical projects, not a
+  simulation of your build. They are useful for ranking problems, not for capacity planning.
+- **Multi-stage conversion is not automatic.** The optimizer leaves a commented skeleton because
+  choosing which build outputs to copy forward needs knowledge of your project.
+- **CVE scanning covers base images, not your application dependencies.** Trivy scans the
+  packages inside the image you build *from*.
+- **`.dockerignore` matching is approximate** when deciding which workspace folders to mention
+  as bloat. It uses exact and simple wildcard matches, not full `filepath.Match` semantics.
+
+---
+
+## Contributing
+
+The rule catalog lives in
+[`shared/rule-catalog.json`](https://github.com/Huzaifa4ever/ImageShrink-AI/blob/main/shared/rule-catalog.json)
+- adding a rule means adding an entry there plus detection logic in `src/rules/engine.ts`.
+
+Absolute URL on purpose: `vsce` rewrites relative links against the extension folder, and a
+`../` path escapes it into a broken `/blob/HEAD/../` URL on the Marketplace page.
+
+```bash
+npm install
+npm run watch      # rebuild on save; press F5 for an Extension Development Host
+npm test           # typecheck + rule engine parity
+```
 
 ## License
 
