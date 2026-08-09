@@ -2,6 +2,7 @@
 .gitignore
 .dockerignore
 .github
+.claude
 .vscode
 .idea
 .env

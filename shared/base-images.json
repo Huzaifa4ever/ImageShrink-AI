@@ -22,11 +22,17 @@
       "defaultSizeMb": 1100,
       "recommendations": [
         {
-          "image": "node:22-alpine",
+          "image": "node:22.11-alpine",
           "sizeMb": 160,
           "compatibility": 85,
           "recommended": true,
-          "note": "Alpine uses musl libc. Packages with native addons (sharp, bcrypt, canvas) may need rebuilding or a -slim base instead."
+          "note": "Alpine uses musl libc. Packages with native addons (sharp, bcrypt, canvas) may need rebuilding or a -slim base instead. Pinned to a minor version so the floating-tag rule passes too — bump it deliberately."
+        },
+        {
+          "image": "node:22-alpine",
+          "sizeMb": 160,
+          "compatibility": 85,
+          "note": "Same image, but 22.x moves under you as patches ship."
         },
         {
           "image": "node:lts-alpine",

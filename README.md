@@ -27,7 +27,7 @@ ImageShrink-AI/
 │   │   ├── services/             # api (auto-refresh), auth, docker, account, extension
 │   │   └── types/
 │   ├── public/
-│   │   └── staticwebapp.config.json   # SPA routing for Azure Static Web Apps
+│   │   └── staticwebapp.config.json   # SPA fallback routing for static hosting
 │   └── .env.example
 │
 ├── server/                       # FastAPI + MongoDB backend
@@ -54,17 +54,17 @@ ImageShrink-AI/
 │   ├── .env.example
 │   └── run.py
 │
-└── vscode-extension/             # TypeScript VS Code extension
+└── vscode-extension/             # Standalone VS Code extension - no backend, no account
     ├── src/
     │   ├── rules/                # TS port of the lexer + engine (runs on every keystroke)
+    │   ├── analysis/             # Local size estimate, Trivy scan, Dockerfile rewriter
     │   ├── providers/            # diagnostics, code actions, hovers, completion
     │   ├── views/                # Activity Bar sidebar + report webview
-    │   ├── api/                  # HTTP client with transparent token refresh
-    │   ├── auth/session.ts       # Device flow + SecretStorage
     │   └── workspace/context.ts  # .dockerignore / manifest / bloat detection
     ├── scripts/
     │   ├── sync-shared.mjs       # Copies shared/*.json in at build time
-    │   └── check-parity.mjs      # Fails if the TS and Python engines disagree
+    │   ├── check-parity.mjs      # Fails if the TS and Python engines disagree
+    │   └── check-standalone.mjs  # Runs the analyzer outside VS Code, end to end
     └── esbuild.mjs
 ```
 
@@ -124,8 +124,11 @@ npm run dev
 
 ### VS Code Extension
 
-Not published to the Visual Studio Marketplace - it is built from this repository and installed
-locally. Requires Node.js 20+, VS Code 1.95+, and the `code` command on your PATH.
+**Standalone.** It has no backend, no account and no HTTP client - rules, size estimates and the
+Dockerfile rewrite all run in-process, and CVE scanning shells out to a local Trivy install. You
+do not need the API or website running to use it.
+
+Requires Node.js 20+, VS Code 1.95+, and the `code` command on your PATH.
 
 ```bash
 cd vscode-extension
@@ -155,8 +158,12 @@ Extension Development Host; `npm run watch` rebuilds on save.
 The extension reads `shared/` for its rule data, copied in at build time by
 `scripts/sync-shared.mjs` - so it must be built from inside a checkout, not standalone.
 
-Point it at a local backend via the `imageshrink.apiUrl` and `imageshrink.webUrl` settings
-(defaults are `http://localhost:8000/api/v1` and `http://localhost:5173`).
+Optional external tools, both detected automatically:
+
+| Tool | Enables | Without it |
+|---|---|---|
+| [Trivy](https://trivy.dev) | Base image CVE scanning | Reported as unavailable, never as clean |
+| Docker | Measured base image sizes | Falls back to published estimates, labelled as such |
 
 ## Environment Variables
 
@@ -327,33 +334,25 @@ cd server && PYTHONPATH=. ./venv/bin/python -m pytest
 PYTHONPATH=. ./venv/bin/python scripts/check_auth_flow.py       # 50 checks
 PYTHONPATH=. ./venv/bin/python scripts/check_analysis_flow.py   # 41 checks, 1 real AI call
 
-# The TS and Python rule engines must agree exactly
-cd vscode-extension && node scripts/check-parity.mjs
+# The TS and Python rule engines must agree exactly, and the extension must work offline
+cd vscode-extension && npm test
 ```
 
 ## Deployment
 
-**[AZURE_DEPLOYMENT.md](AZURE_DEPLOYMENT.md)** is a click-by-click walkthrough of the Azure
-portal - database, API, website, and your own custom domain with free HTTPS. Written for someone
-who has not used Azure before; almost everything happens in the browser.
-
-**[GIT_COMMITS.md](GIT_COMMITS.md)** splits the current working tree into logical commits, with
-the exact paths and messages ready to paste.
-
-The shape it deploys:
-
-| Piece | Service | Why |
-|---|---|---|
-| Website | Azure Static Web Apps (Free) | Free hosting, free certificate on a custom domain |
-| API | Azure App Service for Containers (B1 Linux) | Keeps the container warm, so Trivy's database survives between requests |
-| Database | Cosmos DB for MongoDB (vCore), or MongoDB Atlas | Both speak real MongoDB - no code changes |
+| Piece | Runs on |
+|---|---|
+| Website | Any static host - it is a plain Vite build |
+| API | Any container host |
+| Database | MongoDB, or any MongoDB-compatible service |
 
 Build the API image from the **repository root**, not `server/` - the backend reads `shared/` at
 runtime and Docker cannot copy from outside the build context:
 
 ```bash
 docker build -f server/Dockerfile -t imageshrink-api .
-docker run -p 8000:8000 -e JWT_SECRET=dev -e MONGO_URI="mongodb://host.docker.internal:27017/imageshrink_ai" imageshrink-api
+docker run -p 8000:8000 -e JWT_SECRET=dev \
+  -e MONGO_URI="mongodb://host.docker.internal:27017/imageshrink_ai" imageshrink-api
 ```
 
 The image is ~494 MB, runs as an unprivileged user, and carries a `HEALTHCHECK` that hits
@@ -362,7 +361,7 @@ but scans work instantly from a cold start - worth it on scale-to-zero hosting).
 
 Two settings are easy to miss and break things quietly:
 
-- **`WEBSITES_PORT=8000`** on App Service, or you get a blank page.
+- The container listens on **8000**. Hosts that inject their own port expect to be told this.
 - **`ALLOWED_ORIGINS`** must match the browser's address exactly - scheme, host, no trailing slash.
 
 `VITE_API_URL` is inlined into the frontend bundle at **build** time, so changing the API address
@@ -370,16 +369,20 @@ means rebuilding and redeploying the website, not just editing a setting.
 
 ## Distribution
 
-The extension is distributed as source, not through the Visual Studio Marketplace. There is no
-listing to search for and no publisher account involved - `npm run install-local` is the supported
-install path, and the website's `/extension` page documents the same commands.
+The extension is standalone and ready for the Visual Studio Marketplace. Publishing needs a
+publisher id registered at [marketplace.visualstudio.com/manage](https://marketplace.visualstudio.com/manage)
+matching `"publisher"` in `vscode-extension/package.json`, plus an Azure DevOps personal access
+token scoped to **Marketplace → Manage**:
 
-Should that change later, publishing would need a publisher id registered at
-[marketplace.visualstudio.com/manage](https://marketplace.visualstudio.com/manage) matching
-`"publisher"` in `vscode-extension/package.json`, plus an Azure DevOps personal access token
-scoped to **Marketplace → Manage**. Two things would need updating first: the `imageshrink.apiUrl`
-and `imageshrink.webUrl` defaults still point at localhost, which would leave every installer with
-an extension that cannot reach a server.
+```bash
+cd vscode-extension
+npm test                              # typecheck + engine parity + offline analysis
+npx vsce login <publisher-id>
+npx vsce publish
+```
+
+Nothing needs reconfiguring first: there are no backend URLs baked in, because the extension
+never calls one.
 
 ## Tech Stack
 

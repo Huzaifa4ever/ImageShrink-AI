@@ -104,14 +104,14 @@ def test_a_fix_never_duplicates_the_instruction_keyword():
     patched = apply_fix("FROM node\nUSER node\nCMD [\"x\"]\n", from_fix)
 
     assert "FROM FROM" not in patched
-    assert patched.startswith("FROM node:22-alpine")
+    assert patched.startswith("FROM node:22.11-alpine")
 
 def test_flags_a_full_base_image_with_the_specific_saving():
     findings = [f for f in analyze("FROM node:22\nUSER node\nCMD [\"x\"]\n") if f.rule_id == "large-base-image"]
 
     assert len(findings) == 1
     finding = findings[0]
-    assert finding.suggested_image == "node:22-alpine"
+    assert finding.suggested_image == "node:22.11-alpine"
     assert finding.savings_mb == 1100 - 160
     assert finding.compatibility == 85
 
