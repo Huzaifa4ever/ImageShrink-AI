@@ -1,11 +1,11 @@
 # Changelog
 
-## 1.0.0
+## 1.0.1
 
-First release.
-
-ImageShrink runs entirely on your machine. There is no account, no sign-in, no telemetry and no
-backend - the extension contains no HTTP client at all.
+- Converted ImageShrink into a fully standalone, offline VS Code extension.
+- No account, backend, or API connection required.
+- Added local Docker and Trivy integration.
+- Updated documentation and Marketplace presentation.
 
 ### Analysis
 
