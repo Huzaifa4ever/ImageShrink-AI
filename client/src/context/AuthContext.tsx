@@ -10,6 +10,7 @@ interface AuthValue {
   isAuthenticated: boolean;
   login: (identifier: string, password: string) => Promise<void>;
   signup: (username: string, email: string, password: string) => Promise<void>;
+  signInWithGoogle: (credential: string) => Promise<void>;
   logout: () => Promise<void>;
   setUser: (user: User) => void;
 }
@@ -50,6 +51,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(session.user);
   }, []);
 
+  const signInWithGoogle = useCallback(async (credential: string) => {
+    const session = await authService.googleSignIn(credential);
+    tokenStore.set(session.token, session.refreshToken);
+    setUser(session.user);
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await authService.logout();
@@ -61,8 +68,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthValue>(
-    () => ({ user, bootstrapping, isAuthenticated: user !== null, login, signup, logout, setUser }),
-    [user, bootstrapping, login, signup, logout]
+    () => ({ user, bootstrapping, isAuthenticated: user !== null, login, signup, signInWithGoogle, logout, setUser }),
+    [user, bootstrapping, login, signup, signInWithGoogle, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

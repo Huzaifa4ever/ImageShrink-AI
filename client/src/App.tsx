@@ -2,6 +2,9 @@ import { Routes, Route } from 'react-router-dom';
 import { Box } from '@mui/material';
 import Navbar from './components/layout/Navbar';
 import { RedirectIfAuthed, RequireAuth } from './components/RouteGuards';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import VerifyEmailPage from './pages/VerifyEmailPage';
 import { AuthProvider } from './context/AuthContext';
 import LandingPage from './pages/LandingPage';
 import ExtensionPage from './pages/ExtensionPage';
@@ -32,6 +35,11 @@ function App() {
 
           <Route path="/login" element={<RedirectIfAuthed><LoginPage /></RedirectIfAuthed>} />
           <Route path="/signup" element={<RedirectIfAuthed><SignupPage /></RedirectIfAuthed>} />
+          <Route path="/forgot-password" element={<RedirectIfAuthed><ForgotPasswordPage /></RedirectIfAuthed>} />
+          {/* Not wrapped in RedirectIfAuthed: these arrive from an email link, and a
+              signed-in user following one must still land on the page, not the workbench. */}
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
 
           <Route path="/activate" element={<RequireAuth><ActivatePage /></RequireAuth>} />
 

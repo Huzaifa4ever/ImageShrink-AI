@@ -21,13 +21,37 @@ def normalize_username(value: str) -> str:
     return value
 
 
+PROVIDER_PASSWORD = "password"
+PROVIDER_GOOGLE = "google"
+
+
 def normalize_email(value: str) -> str:
-    from email_validator import EmailNotValidError, validate_email
+    """Validate an address, and check its domain accepts mail at all.
+
+    The MX lookup rejects typos like @gmial.com but cannot prove a mailbox exists — only the
+    confirmation link does. A DNS failure falls back to syntax-only rather than blocking signup.
+    """
+    from email_validator import EmailNotValidError, EmailUndeliverableError, validate_email
+
+    from app.core.config import get_settings
+
+    raw = (value or "").strip()
+    check = get_settings().EMAIL_CHECK_DELIVERABILITY
 
     try:
-        return validate_email((value or "").strip(), check_deliverability=False).normalized.lower()
+        return validate_email(raw, check_deliverability=check).normalized.lower()
+    except EmailUndeliverableError as e:
+        raise ValueError(
+            "That email domain does not accept mail. Check it for a typo."
+        ) from e
     except EmailNotValidError as e:
         raise ValueError("Enter a valid email address") from e
+    except Exception:
+        # DNS itself is unreachable. Fall back rather than punish the user for our network.
+        try:
+            return validate_email(raw, check_deliverability=False).normalized.lower()
+        except EmailNotValidError as e:
+            raise ValueError("Enter a valid email address") from e
 
 
 class UserDocument(BaseModel):
@@ -36,7 +60,11 @@ class UserDocument(BaseModel):
     username: str
     username_lower: str = ""
     email: EmailStr
-    password_hash: str
+    #: None for accounts created through Google — there is no password to store, and a
+    #: placeholder hash would be a password somebody could theoretically guess.
+    password_hash: str | None = None
+    auth_provider: str = PROVIDER_PASSWORD
+    email_verified: bool = False
     avatar: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -74,4 +102,10 @@ def public_user(doc: dict) -> dict:
         "email": doc["email"],
         "avatar": doc.get("avatar"),
         "createdAt": doc.get("createdAt") or doc.get("created_at"),
+        # Accounts that predate email verification have no field. Treat them as verified —
+        # they were created when signing up was all that was asked of them.
+        "emailVerified": bool(doc.get("emailVerified", True)),
+        "authProvider": doc.get("authProvider", PROVIDER_PASSWORD),
+        # Lets the UI hide "change password" for Google accounts, which have none.
+        "hasPassword": bool(doc.get("passwordHash")),
     }

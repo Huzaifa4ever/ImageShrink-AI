@@ -3,6 +3,7 @@ import { Alert, Button, Link as MuiLink, Stack, TextField, Typography } from '@m
 import { Login as LoginIcon } from '@mui/icons-material';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import AuthLayout from '../components/auth/AuthLayout';
+import GoogleSignInButton from '../components/auth/GoogleSignInButton';
 import { useAuth } from '../context/AuthContext';
 import { apiErrorMessage } from '../services/api';
 
@@ -53,6 +54,8 @@ export default function LoginPage() {
         </Typography>
       }
     >
+      <GoogleSignInButton redirectTo={from} text="signin_with" />
+
       <Stack component="form" spacing={2.5} onSubmit={handleSubmit} noValidate>
         {error && <Alert severity="error" sx={{ borderRadius: 2 }}>{error}</Alert>}
 
@@ -74,6 +77,15 @@ export default function LoginPage() {
           fullWidth
           disabled={submitting}
         />
+
+        <MuiLink
+          component={Link}
+          to="/forgot-password"
+          variant="body2"
+          sx={{ color: 'text.secondary', alignSelf: 'flex-end', mt: -1 }}
+        >
+          Forgot your password?
+        </MuiLink>
 
         <Button type="submit" variant="contained" size="large" disabled={submitting} startIcon={<LoginIcon />} sx={{ py: 1.3 }}>
           {submitting ? 'Signing in…' : 'Sign In'}

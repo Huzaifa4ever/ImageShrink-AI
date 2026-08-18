@@ -167,6 +167,10 @@ export interface User {
   email: string;
   avatar?: string | null;
   createdAt: string;
+  emailVerified: boolean;
+  authProvider: 'password' | 'google';
+  /** Google-only accounts have none, so "change password" is hidden for them. */
+  hasPassword: boolean;
 }
 
 export interface Session {

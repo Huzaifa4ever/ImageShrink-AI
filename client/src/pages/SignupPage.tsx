@@ -3,6 +3,7 @@ import { Alert, Button, Link as MuiLink, Stack, TextField, Typography } from '@m
 import { PersonAdd } from '@mui/icons-material';
 import { Link, useNavigate } from 'react-router-dom';
 import AuthLayout from '../components/auth/AuthLayout';
+import GoogleSignInButton from '../components/auth/GoogleSignInButton';
 import { useAuth } from '../context/AuthContext';
 import { apiErrorMessage } from '../services/api';
 import { MIN_PASSWORD_LENGTH, validateEmail, validatePassword, validateUsername } from '../utils/validation';
@@ -62,6 +63,8 @@ export default function SignupPage() {
         </Typography>
       }
     >
+      <GoogleSignInButton text="signup_with" />
+
       <Stack component="form" spacing={2.5} onSubmit={handleSubmit} noValidate>
         {error && <Alert severity="error" sx={{ borderRadius: 2 }}>{error}</Alert>}
 

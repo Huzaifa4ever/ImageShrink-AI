@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import secrets
 from datetime import datetime, timezone
 
@@ -14,7 +15,13 @@ from pymongo.errors import DuplicateKeyError
 
 from app.core.database import get_db
 from app.core.security import hash_password, password_problem, verify_password
-from app.models.user import UserDocument, normalize_email, normalize_username
+from app.models.user import (
+    PROVIDER_GOOGLE,
+    PROVIDER_PASSWORD,
+    UserDocument,
+    normalize_email,
+    normalize_username,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +51,24 @@ async def ensure_indexes() -> None:
         await get_db()["analyses"].create_index(
             [("userId", ASCENDING), ("createdAt", DESCENDING)], name="owner_recent"
         )
+        await _backfill_auth_fields()
         logger.info("auth: indexes ensured")
-    except Exception as e: 
+    except Exception as e:
         logger.warning("auth: could not ensure indexes: %s", e)
+
+
+async def _backfill_auth_fields() -> None:
+    """Backfill accounts predating Google sign-in and email verification.
+
+    Marked verified on purpose: they signed up when confirming was not asked of them.
+    Idempotent — the filter stops matching once it has run.
+    """
+    result = await _users().update_many(
+        {"emailVerified": {"$exists": False}},
+        {"$set": {"emailVerified": True, "authProvider": PROVIDER_PASSWORD}},
+    )
+    if result.modified_count:
+        logger.info("auth: backfilled %d pre-existing account(s)", result.modified_count)
 
 
 async def get_user_by_id(user_id: str) -> dict | None:
@@ -103,11 +125,133 @@ def _dummy_hash() -> str:
 
 async def authenticate(identifier: str, password: str) -> dict:
     user = await _find_by_identifier(identifier)
-    ok = verify_password(password, user["passwordHash"] if user else _dummy_hash())
 
-    if not user or not ok:
+    # A Google-only account has no password hash. Compare against the dummy anyway, so the
+    # response takes the same time as a wrong password and does not leak which accounts exist
+    # or how they were created.
+    stored = (user or {}).get("passwordHash") or _dummy_hash()
+    ok = verify_password(password, stored)
+
+    if not user or not user.get("passwordHash") or not ok:
         raise AuthFailed("Incorrect username/email or password")
+
+    from app.core.config import get_settings
+
+    if get_settings().EMAIL_VERIFICATION_REQUIRED and not user.get("emailVerified", True):
+        raise AuthInvalid(
+            "Please confirm your email address first. Check your inbox for the link."
+        )
     return user
+
+
+async def _unique_username_from(base: str) -> str:
+    """Turn a Google display name into a free username, e.g. 'Ada Lovelace' -> 'adalovelace'."""
+    cleaned = re.sub(r"[^A-Za-z0-9._-]", "", (base or "").replace(" ", "")) or "user"
+    cleaned = cleaned[:28]
+    if len(cleaned) < 3:
+        cleaned = f"{cleaned}user"[:28]
+
+    candidate = cleaned
+    for _ in range(50):
+        if not await _users().find_one({"usernameLower": candidate.lower()}):
+            return candidate
+        candidate = f"{cleaned[:24]}{secrets.randbelow(10_000)}"
+    raise AuthConflict("Could not pick a username for that account")
+
+
+async def upsert_google_user(profile: dict) -> tuple[dict, bool]:
+    """Sign in with a verified Google profile, creating or linking as needed.
+
+    Matching is by email, safe only because the caller already checked Google's email_verified
+    flag — otherwise anyone could claim someone else's address.
+    """
+    email = normalize_email(profile["email"])
+    existing = await _users().find_one({"email": email})
+    now = datetime.now(timezone.utc)
+
+    if existing:
+        # Linking, not overwriting. An existing password keeps working, so someone who signed
+        # up with a password and later clicks the Google button does not lose their old way in.
+        updates: dict = {"emailVerified": True, "updatedAt": now}
+        if not existing.get("avatar") and profile.get("picture"):
+            updates["avatar"] = profile["picture"]
+        if not existing.get("passwordHash"):
+            updates["authProvider"] = PROVIDER_GOOGLE
+        await _users().update_one({"_id": existing["_id"]}, {"$set": updates})
+
+        linked = await get_user_by_id(str(existing["_id"]))
+        if linked is None:
+            raise AuthFailed("Account no longer exists")
+        return linked, False
+
+    username = await _unique_username_from(profile.get("name") or email.split("@")[0])
+    doc = UserDocument(
+        username=username,
+        email=email,
+        password_hash=None,
+        auth_provider=PROVIDER_GOOGLE,
+        email_verified=True,
+        avatar=profile.get("picture"),
+    )
+
+    try:
+        await _users().insert_one(doc.to_mongo())
+    except DuplicateKeyError as e:
+        # Another request created the same account in the gap. Use theirs.
+        raced = await _users().find_one({"email": email})
+        if raced is None:
+            raise AuthConflict("That account already exists") from e
+        return raced, False
+
+    created = await get_user_by_id(doc.id)
+    if created is None:
+        raise AuthInvalid("Account could not be created")
+    return created, True
+
+
+async def mark_email_verified(user_id: str) -> dict | None:
+    await _users().update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"emailVerified": True, "updatedAt": datetime.now(timezone.utc)}},
+    )
+    return await get_user_by_id(user_id)
+
+
+async def find_by_email(email: str) -> dict | None:
+    try:
+        clean = normalize_email(email)
+    except ValueError:
+        return None
+    return await _users().find_one({"email": clean})
+
+
+async def set_password(user_id: str, new_password: str) -> None:
+    """Set a password without knowing the old one. For the reset-by-email flow only.
+
+    Also gives a Google-only account a password, which is the point.
+    """
+    problem = password_problem(new_password)
+    if problem:
+        raise AuthInvalid(problem)
+
+    user = await get_user_by_id(user_id)
+    if user is None:
+        raise AuthFailed("Account no longer exists")
+
+    if user.get("passwordHash") and verify_password(new_password, user["passwordHash"]):
+        raise AuthInvalid("New password must be different from the current one")
+
+    await _users().update_one(
+        {"_id": ObjectId(user_id)},
+        {
+            "$set": {
+                "passwordHash": hash_password(new_password),
+                # Reaching this proves control of the inbox.
+                "emailVerified": True,
+                "updatedAt": datetime.now(timezone.utc),
+            }
+        },
+    )
 
 
 async def update_profile(user_id: str, username: str | None, email: str | None) -> dict:
