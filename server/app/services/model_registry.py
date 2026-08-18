@@ -12,9 +12,10 @@ from app.services import provider, rate_limiter
 logger = logging.getLogger(__name__)
 
 _LABELS = {
-    "zai-glm-4.7": "Z.ai GLM 4.7",
-    "gemma-4-31b": "Gemma 4 31B",
-    "gpt-oss-120b": "OpenAI GPT-OSS 120B",
+    "openai/gpt-oss-120b": "OpenAI GPT-OSS 120B",
+    "openai/gpt-oss-20b": "OpenAI GPT-OSS 20B",
+    "qwen/qwen3.6-27b": "Qwen 3.6 27B",
+    "llama-3.3-70b-versatile": "Llama 3.3 70B Versatile",
 }
 
 _catalog_cache: tuple[float, list[str]] | None = None
@@ -39,7 +40,19 @@ async def catalog_ids() -> list[str]:
         provider.get_client().models.list(),
         timeout=settings.MODEL_PROBE_TIMEOUT_SECONDS,
     )
-    ids = sorted(m.id for m in listing.data if getattr(m, "id", None))
+    served = {m.id for m in listing.data if getattr(m, "id", None)}
+
+    allowed = settings.model_allowlist
+    if allowed:
+        # Intersected, not substituted: an allowlisted model the provider has retired must
+        # disappear rather than be offered as available. Allowlist order is preserved so the
+        # picker is stable rather than alphabetical.
+        ids = [model_id for model_id in allowed if model_id in served]
+        missing = [model_id for model_id in allowed if model_id not in served]
+        if missing:
+            logger.warning("configured models not served by the provider: %s", ", ".join(missing))
+    else:
+        ids = sorted(served)
 
     _catalog_cache = (time.monotonic() + settings.MODEL_CATALOG_CACHE_SECONDS, ids)
     return ids
@@ -53,7 +66,7 @@ async def _probe_model(model_id: str) -> dict:
     if cached and cached[0] > time.monotonic():
         return cached[1]
 
-    quota_wait = rate_limiter.try_reserve(model_id)
+    quota_wait = await rate_limiter.try_reserve(model_id)
     if quota_wait > 0:
         return {
             "status": provider.BUSY,
@@ -77,7 +90,7 @@ async def _probe_model(model_id: str) -> dict:
         verdict = provider.classify_error(e)
         logger.info("model probe %s -> %s (%s)", model_id, verdict.status, verdict.reason)
         result = {"status": verdict.status, "reason": verdict.reason, "latencyMs": None}
-        rate_limiter.cool_down(
+        await rate_limiter.cool_down(
             model_id,
             settings.MODEL_COOLDOWN_SECONDS
             if verdict.retryable
@@ -93,13 +106,13 @@ async def list_models(probe: bool = False) -> dict:
     """Catalog of selectable models, optionally with a live health check on each."""
     settings = get_settings()
 
-    if not settings.CEREBRAS_API_KEY:
+    if not settings.GROQ_API_KEY:
         return {
             "models": [],
-            "default": settings.CEREBRAS_MODEL,
+            "default": settings.GROQ_MODEL,
             "probed": False,
             "requestsPerMinute": settings.MODEL_REQUESTS_PER_MINUTE,
-            "error": "No CEREBRAS_API_KEY configured, so no model can be reached.",
+            "error": "No GROQ_API_KEY configured, so no model can be reached.",
         }
 
     async with _lock:
@@ -109,7 +122,7 @@ async def list_models(probe: bool = False) -> dict:
             logger.warning("model catalog unreachable: %s", e)
             return {
                 "models": [],
-                "default": settings.CEREBRAS_MODEL,
+                "default": settings.GROQ_MODEL,
                 "probed": False,
                 "requestsPerMinute": settings.MODEL_REQUESTS_PER_MINUTE,
                 "error": f"Could not reach the AI provider: {provider.classify_error(e).reason}",
@@ -120,13 +133,13 @@ async def list_models(probe: bool = False) -> dict:
         else:
             probes = [{"status": provider.UNKNOWN, "reason": "", "latencyMs": None}] * len(catalog)
 
-    quota = rate_limiter.snapshot(catalog)
+    quota = await rate_limiter.snapshot(catalog)
 
     models = [
         {
             "id": model_id,
             "label": _label_for(model_id),
-            "isDefault": model_id == settings.CEREBRAS_MODEL,
+            "isDefault": model_id == settings.GROQ_MODEL,
             "quota": quota[model_id],
             **result,
         }
@@ -137,7 +150,7 @@ async def list_models(probe: bool = False) -> dict:
 
     return {
         "models": models,
-        "default": settings.CEREBRAS_MODEL,
+        "default": settings.GROQ_MODEL,
         "probed": probe,
         "requestsPerMinute": settings.MODEL_REQUESTS_PER_MINUTE,
         "error": None,
