@@ -136,7 +136,7 @@ async def run_with_fallback(
                 "" if verdict.fatal else " - trying next candidate",
             )
 
-            rate_limiter.cool_down(
+            await rate_limiter.cool_down(
                 model,
                 settings.MODEL_COOLDOWN_SECONDS
                 if verdict.retryable

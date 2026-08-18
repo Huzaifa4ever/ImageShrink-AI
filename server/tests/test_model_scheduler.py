@@ -50,7 +50,7 @@ async def test_a_rate_limited_model_is_left_cooling_down(clock: FakeClock):
 
     await model_scheduler.run_with_fallback("hot", call, candidates=["cool"])
 
-    assert rate_limiter.wait_seconds("hot") == pytest.approx(30.0)
+    assert await rate_limiter.wait_seconds("hot") == pytest.approx(30.0)
 
 
 async def test_a_lone_throttled_model_ends_as_busy_not_unavailable(clock: FakeClock):
@@ -78,7 +78,7 @@ async def test_missing_model_is_dropped_from_the_running(clock: FakeClock):
 
     assert outcome.model == "current"
     assert tried == ["retired", "current"]
-    assert rate_limiter.wait_seconds("retired") == pytest.approx(300.0)
+    assert await rate_limiter.wait_seconds("retired") == pytest.approx(300.0)
 
 
 async def test_a_rejected_api_key_stops_immediately_without_burning_quota(clock: FakeClock):
@@ -96,7 +96,7 @@ async def test_a_rejected_api_key_stops_immediately_without_burning_quota(clock:
 
 async def test_exhausted_quota_surfaces_as_busy_with_a_retry_after(clock: FakeClock):
     for _ in range(5):
-        rate_limiter.try_reserve("a")
+        await rate_limiter.try_reserve("a")
 
     async def call(model: str) -> str:  
         raise AssertionError("should not have been called")
@@ -126,7 +126,7 @@ async def test_attempts_stop_at_the_configured_maximum(clock: FakeClock):
 
 async def test_waiting_for_a_slot_is_reported_as_queue_time(clock: FakeClock):
     """A caller that waited deserves to be told, so a slow analysis is explicable."""
-    rate_limiter.cool_down("a", 0.5)
+    await rate_limiter.cool_down("a", 0.5)
 
     async def call(model: str) -> str:
         return "ok"
@@ -145,6 +145,6 @@ async def test_success_after_a_fallback_still_consumes_only_one_slot_per_attempt
 
     await model_scheduler.run_with_fallback("a", call, candidates=["b"])
 
-    snap = rate_limiter.snapshot(["a", "b"])
+    snap = await rate_limiter.snapshot(["a", "b"])
     assert snap["a"]["remaining"] == 4
     assert snap["b"]["remaining"] == 4
