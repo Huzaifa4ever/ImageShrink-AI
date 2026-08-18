@@ -10,3 +10,15 @@ PyJWT==2.10.1
 email-validator==2.2.0
 openai==1.82.0
 httpx==0.27.2
+
+# Application Insights. Inert unless APPLICATIONINSIGHTS_CONNECTION_STRING is set, so local
+# development is unaffected. Auto-instruments FastAPI, httpx and pymongo.
+azure-monitor-opentelemetry==1.6.4
+
+# Verifies the signature, audience and expiry of Google Sign-In ID tokens. Getting any of
+# those checks wrong turns "sign in with Google" into "sign in as anyone", so this is not
+# hand-rolled.
+google-auth==2.37.0
+
+# Sends the email-confirmation and password-reset messages.
+azure-communication-email==1.0.0
