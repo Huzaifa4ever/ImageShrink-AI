@@ -6,12 +6,13 @@ FROM aquasec/trivy:${TRIVY_VERSION} AS trivy-bin
 
 
 FROM trivy-bin AS trivy-db-true
-RUN trivy --cache-dir /trivy-cache image --download-db-only
+ARG TRIVY_DB_DATE=unset
+RUN echo "trivy db requested for ${TRIVY_DB_DATE}" \
+    && trivy --cache-dir /trivy-cache image --download-db-only
 
 FROM trivy-bin AS trivy-db-false
 RUN mkdir -p /trivy-cache
 
-# Resolves to trivy-db-true or trivy-db-false.
 FROM trivy-db-${BAKE_TRIVY_DB} AS trivy-db
 
 

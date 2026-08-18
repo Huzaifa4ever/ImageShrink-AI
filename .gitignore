@@ -1,6 +1,7 @@
 node_modules/
 venv/
 .venv/
+.ci-venv/
 env/
 
 client/dist/
@@ -40,6 +41,16 @@ pnpm-debug.log*
 
 mongo_data/
 .trivy-cache/
+
+# Database dumps from scripts/migrate_to_atlas.py. These hold real emails and password
+# hashes — never commit one, even to a private repo.
+imageshrink-backup-*.json
+
+# Written by the Jenkins pipeline into the workspace: scan output and the JUnit report.
+reports/
+pytest-report.xml
+trivy-report.*
+trivy-image-report.*
 
 .DS_Store
 Thumbs.db

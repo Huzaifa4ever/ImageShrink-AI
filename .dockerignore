@@ -44,6 +44,15 @@ htmlcov
 
 docs
 LICENSE
+*.md
+Jenkinsfile
+docker-compose.yml
+imageshrink-backup-*.json
+reports/
+pytest-report.xml
+trivy-report.*
+trivy-image-report.*
+server/.ci-venv
 
 .DS_Store
 Thumbs.db

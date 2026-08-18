@@ -1,14 +1,12 @@
 # ImageShrink-AI
 
 > Multi-Stage Docker Image Shrinker & Layer Auditor - web app, REST API and VS Code extension.
-> Deterministic Dockerfile linting plus AI-powered rewrites via Cerebras.
+> Deterministic Dockerfile linting plus AI-powered rewrites via Groq.
 
 ## Project Structure
 
 ```
 ImageShrink-AI/
-├── docker-compose.yml            # Local MongoDB
-│
 ├── shared/                       # Single source of truth, read by backend AND extension
 │   ├── rule-catalog.json         # Every rule's user-facing text, severity, impact estimates
 │   └── base-images.json          # Image sizes + compatibility scores behind suggestions
@@ -19,11 +17,13 @@ ImageShrink-AI/
 │   │   │   ├── analysis/         # AnalysisDetail report renderer
 │   │   │   ├── landing/          # VS Code hero, feature cards, animated editor mockup
 │   │   │   ├── layout/           # Navbar
+│   │   │   ├── auth/            # AuthLayout, GoogleSignInButton
 │   │   │   ├── settings/         # Devices, API keys, avatar, account deletion
 │   │   │   └── RouteGuards.tsx
 │   │   ├── context/AuthContext.tsx
-│   │   ├── pages/                # Landing, Extension, Docs, Activate, Workbench,
-│   │   │                         # Analysis, History, Settings, Login, Signup
+│   │   ├── pages/                # Landing, Extension, Docs, Activate, Workbench, Analysis,
+│   │   │                         # History, Settings, Login, Signup, ForgotPassword,
+│   │   │                         # ResetPassword, VerifyEmail
 │   │   ├── services/             # api (auto-refresh), auth, docker, account, extension
 │   │   └── types/
 │   ├── public/
@@ -36,20 +36,24 @@ ImageShrink-AI/
 │   │   │   ├── deps.py           # Auth dependencies (access token OR API key)
 │   │   │   ├── errors.py         # Provider failures → status codes, shared by endpoints
 │   │   │   └── v1/               # auth, device, account, analyze, models, rules
-│   │   ├── core/                 # config, database, security (JWT + token hashing)
+│   │   ├── core/                 # config, database, security (JWT + token hashing),
+│   │   │                         # observability (logging + Application Insights)
 │   │   ├── models/               # analysis, user, session documents
 │   │   └── services/
 │   │       ├── provider.py           # Shared AI client + error classification
-│   │       ├── rate_limiter.py       # Per-model sliding-window quota (mechanism)
+│   │       ├── rate_limiter.py       # Per-model sliding-window quota, shared via MongoDB
 │   │       ├── model_scheduler.py    # Retry + fallback policy
 │   │       ├── model_registry.py     # Live catalog + quota-aware health probes
 │   │       ├── ai_optimizer.py       # Prompts + hard normalization of model output
 │   │       ├── dockerfile_lexer.py   # Instruction parsing with source positions
 │   │       ├── rule_engine.py        # 24 deterministic rules + scoring
 │   │       ├── trivy_scanner.py      # CVE + misconfig scanning
+│   │       ├── google_auth.py        # Verifies Google Sign-In ID tokens
+│   │       ├── email_service.py       # Azure Communication Services sender + templates
+│   │       ├── email_token_service.py # Single-use verify / reset links
 │   │       └── auth_service.py, session_service.py, device_flow.py, api_key_service.py
 │   ├── scripts/                  # check_auth_flow.py, check_analysis_flow.py
-│   ├── tests/                    # 106 unit tests
+│   ├── tests/                    # 133 unit tests
 │   ├── Dockerfile                # Multi-stage; build from the REPO ROOT, not server/
 │   ├── .env.example
 │   └── run.py
@@ -82,8 +86,7 @@ echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.
 sudo apt-get update && sudo apt-get install -y trivy
 ```
 
-Because `TRIVY_SKIP_DB_UPDATE=true` keeps scans off the critical path, seed and refresh the
-vulnerability database out of band:
+Seed the vulnerability database once so the first scan does not pay for the download:
 
 ```bash
 trivy image --download-db-only
@@ -99,7 +102,7 @@ python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
 cp .env.example .env
-# Then edit .env - JWT_SECRET and CEREBRAS_API_KEY are the two you must fill in.
+# Then edit .env - JWT_SECRET and GROQ_API_KEY are the two you must fill in.
 # Generate a secret with:  python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 python run.py
@@ -107,10 +110,11 @@ python run.py
 # Docs → http://localhost:8000/docs
 ```
 
-MongoDB has to be running. The quickest way is the bundled compose file:
+MongoDB has to be running. In deployment that is MongoDB Atlas, set via `MONGO_URI`. For local
+work a throwaway container is enough — `--rm` so it cleans itself up on stop:
 
 ```bash
-docker compose up -d mongo
+docker run -d --rm --name imageshrink-test-mongo -p 27017:27017 mongo:7
 ```
 
 ### Frontend
@@ -124,11 +128,17 @@ npm run dev
 
 ### VS Code Extension
 
-**Standalone.** It has no backend, no account and no HTTP client - rules, size estimates and the
-Dockerfile rewrite all run in-process, and CVE scanning shells out to a local Trivy install. You
-do not need the API or website running to use it.
+**Standalone.** No backend, no account, no HTTP client - rules, size estimates and the Dockerfile
+rewrite all run in-process, and CVE scanning shells out to a local Trivy install. You do not need
+the API or website running to use it.
 
-Requires Node.js 20+, VS Code 1.95+, and the `code` command on your PATH.
+Install from the Marketplace - search **ImageShrink** in the Extensions view, or:
+
+```bash
+code --install-extension imageshrink.imageshrink-ai
+```
+
+To build the latest source instead (Node.js 20+, VS Code 1.95+, `code` on your PATH):
 
 ```bash
 cd vscode-extension
@@ -136,20 +146,11 @@ npm install
 npm run install-local     # packages the .vsix and installs it with --force
 ```
 
-Then run **Developer: Reload Window** in VS Code and open a Dockerfile.
-
-Re-running `install-local` after a `git pull` upgrades the installed copy in place. To verify:
+Then run **Developer: Reload Window**. Verify with:
 
 ```bash
 code --list-extensions --show-versions | grep imageshrink
-# → imageshrink.imageshrink-ai@1.0.0
-```
-
-If the `code` command is unavailable, build the package and install it through the UI
-(Extensions view → `…` menu → **Install from VSIX…**):
-
-```bash
-npm run vsix              # → imageshrink-ai.vsix
+# → imageshrink.imageshrink-ai@1.0.2
 ```
 
 To develop it, open the `vscode-extension` folder in VS Code and press <kbd>F5</kbd> for an
@@ -171,9 +172,17 @@ Optional external tools, both detected automatically:
 | Key | Description |
 |-----|-------------|
 | `MONGO_URI` | MongoDB connection string |
-| `CEREBRAS_API_KEY` | Cerebras Cloud API key |
-| `CEREBRAS_MODEL` | Model used for optimization (default: `zai-glm-4.7`) |
+| `GROQ_API_KEY` | Groq Cloud API key - get one at console.groq.com/keys |
+| `GROQ_MODEL` | Default model (default: `openai/gpt-oss-120b`) |
+| `GROQ_BASE_URL` | OpenAI-compatible endpoint (default: `https://api.groq.com/openai/v1`) |
 | `ALLOWED_ORIGINS` | Comma-separated CORS origins |
+| `WEB_APP_URL` | Base address used to build links in emails |
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID. Empty disables Google sign-in |
+| `ACS_CONNECTION_STRING` | Azure Communication Services. Empty disables outbound email |
+| `ACS_SENDER_ADDRESS` | Verified sender, e.g. `donotreply@x.azurecomm.net` |
+| `EMAIL_VERIFICATION_REQUIRED` | Block sign-in until the address is confirmed (default: `false`) |
+| `LOG_LEVEL` | `DEBUG`/`INFO`/`WARNING`/`ERROR` (default: `INFO`) |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | Enables tracing. Empty disables telemetry |
 | `TRIVY_ENABLED` | Toggle security scanning (default: `true`) |
 | `TRIVY_BINARY` | Path to the Trivy executable (default: `trivy`) |
 | `TRIVY_TIMEOUT_SECONDS` | Per-scan timeout (default: `120`) |
@@ -188,7 +197,7 @@ Optional external tools, both detected automatically:
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Access token lifetime (default: `60`) |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | How long a device stays signed in (default: `30`) |
 | `WEB_APP_URL` | Where the extension sends users to approve a login |
-| `MODEL_REQUESTS_PER_MINUTE` | Per-model quota (default: `5`) |
+| `MODEL_REQUESTS_PER_MINUTE` | Per-model quota, set from the provider's token cap (default: `3`) |
 | `MODEL_MAX_QUEUE_WAIT_SECONDS` | Longest wait for a slot before returning 429 (default: `45`) |
 | `MODEL_MAX_ATTEMPTS` | Models tried before giving up on one analysis (default: `4`) |
 | `MODEL_COOLDOWN_SECONDS` | How long a throttled model is skipped (default: `30`) |
@@ -327,8 +336,20 @@ otherwise consume three of the five requests a minute allows. The registry repor
 ## Testing
 
 ```bash
-# Backend unit tests (106) - pure logic, no database
+# Backend unit tests (133)
 cd server && PYTHONPATH=. ./venv/bin/python -m pytest
+
+# 48 of these need a real MongoDB: the shared quota counter and the single-use email tokens
+# are both guarded by atomic database operations, and an in-memory fake would reproduce the
+# happy path and none of the protections. Without one they skip loudly rather than passing
+# on a fake, so run this first:
+docker run -d --rm --name imageshrink-test-mongo -p 27017:27017 mongo:7
+
+# ...then stop it when you are done. Nothing else needs it — the app itself talks to Atlas.
+docker stop imageshrink-test-mongo
+
+# Or point at any instance you already have:
+#   export MONGO_TEST_URI=mongodb://host:27017
 
 # Integration against a real MongoDB. Each creates and deletes a throwaway account.
 PYTHONPATH=. ./venv/bin/python scripts/check_auth_flow.py       # 50 checks
@@ -355,9 +376,20 @@ docker run -p 8000:8000 -e JWT_SECRET=dev \
   -e MONGO_URI="mongodb://host.docker.internal:27017/imageshrink_ai" imageshrink-api
 ```
 
-The image is ~494 MB, runs as an unprivileged user, and carries a `HEALTHCHECK` that hits
-`/health`. Pass `--build-arg BAKE_TRIVY_DB=true` to bake the vulnerability database in (~1.7 GB,
-but scans work instantly from a cold start - worth it on scale-to-zero hosting).
+The image runs as an unprivileged user and carries a `HEALTHCHECK` that hits `/health`. Sizes,
+measured:
+
+| Build | Size | Trade |
+|---|---|---|
+| default | ~650 MB | first scan after each restart downloads the CVE database |
+| `--build-arg BAKE_TRIVY_DB=true` | ~1.86 GB | scans work immediately, slower image pull |
+
+Container storage is wiped on restart, so a database downloaded at runtime is downloaded again
+every time. On a host that restarts often, baking it in is usually the better trade.
+
+Pair it with `--build-arg TRIVY_DB_DATE=$(date +%Y-%m-%d)`. The download step never changes, so
+Docker otherwise reuses that layer indefinitely and the baked database silently goes stale - a
+scanner that reports nothing because it knows nothing.
 
 Two settings are easy to miss and break things quietly:
 
@@ -369,20 +401,23 @@ means rebuilding and redeploying the website, not just editing a setting.
 
 ## Distribution
 
-The extension is standalone and ready for the Visual Studio Marketplace. Publishing needs a
-publisher id registered at [marketplace.visualstudio.com/manage](https://marketplace.visualstudio.com/manage)
-matching `"publisher"` in `vscode-extension/package.json`, plus an Azure DevOps personal access
-token scoped to **Marketplace → Manage**:
+Published on the Visual Studio Marketplace as **`imageshrink.imageshrink-ai`**. Search
+"ImageShrink" in the Extensions view, or:
+
+```bash
+code --install-extension imageshrink.imageshrink-ai
+```
+
+To publish an update:
 
 ```bash
 cd vscode-extension
-npm test                              # typecheck + engine parity + offline analysis
-npx vsce login <publisher-id>
+npm version patch          # or minor / major
+npm test                   # typecheck + engine parity + offline analysis
 npx vsce publish
 ```
 
-Nothing needs reconfiguring first: there are no backend URLs baked in, because the extension
-never calls one.
+Nothing needs reconfiguring first - the extension is standalone and has no backend URLs baked in.
 
 ## Tech Stack
 
@@ -391,7 +426,7 @@ never calls one.
 | Frontend | React 18, Vite, TypeScript, MUI v9, React Router v6 |
 | Backend | FastAPI, Python 3.12, Uvicorn |
 | Database | MongoDB (async via Motor) |
-| AI | Cerebras Cloud (`zai-glm-4.7`) |
+| AI | Groq Cloud (`openai/gpt-oss-120b`) |
 | Security | Trivy CLI (image CVEs + Dockerfile misconfig) |
 | Extension | TypeScript, VS Code API ^1.95, esbuild |
 | Styling | MUI dark theme + custom CSS |
