@@ -52,7 +52,7 @@ export default function LandingPage() {
             className="mono"
             sx={{ fontSize: '0.75rem', color: '#CCFF00', mb: 3, letterSpacing: '0.12em', textTransform: 'uppercase' }}
           >
-            Powered by Cerebras AI
+            Powered by Groq
           </Typography>
 
           <Typography
@@ -194,7 +194,7 @@ export default function LandingPage() {
           <Stack spacing={0}>
             {[
               { n: '01', title: 'Upload', desc: 'Drag-and-drop your Dockerfile or paste its content directly.' },
-              { n: '02', title: 'Analyze', desc: 'Cerebras AI parses every stage, detects bloat, and scans for CVEs.' },
+              { n: '02', title: 'Analyze', desc: 'AI parses every stage, detects bloat, and scans for CVEs.' },
               { n: '03', title: 'Ship', desc: 'Download a refactored multi-stage Dockerfile with a full savings report.' },
             ].map((step, i) => (
               <Box

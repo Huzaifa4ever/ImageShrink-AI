@@ -1,5 +1,5 @@
 """
-Entry point — run with: python run.py
+Entry point - run with: python run.py
 Or via uvicorn directly: uvicorn app.main:app --reload
 """
 import uvicorn
@@ -13,5 +13,9 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=settings.PORT,
         reload=settings.DEBUG,
+        # Settings are read once per process and cached, and uvicorn's reloader only watches
+        # *.py by default - so editing .env changed nothing until the server was killed by
+        # hand. Watching it here means pasting an API key takes effect immediately.
+        reload_includes=[".env"] if settings.DEBUG else None,
         log_level="info",
     )

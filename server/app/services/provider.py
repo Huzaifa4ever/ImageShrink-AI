@@ -36,8 +36,8 @@ def get_client() -> AsyncOpenAI:
     if _client is None:
         settings = get_settings()
         _client = AsyncOpenAI(
-            api_key=settings.CEREBRAS_API_KEY,
-            base_url=settings.CEREBRAS_BASE_URL,
+            api_key=settings.GROQ_API_KEY,
+            base_url=settings.GROQ_BASE_URL,
         )
     return _client
 

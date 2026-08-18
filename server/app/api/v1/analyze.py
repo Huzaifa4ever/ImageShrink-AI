@@ -162,7 +162,7 @@ async def analyze_dockerfile(
     user: dict = Depends(get_current_user),
 ):
     """Web workbench upload."""
-    selected_model = (model or "").strip() or settings.CEREBRAS_MODEL
+    selected_model = (model or "").strip() or settings.GROQ_MODEL
     await _reject_unservable(selected_model)
 
     max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
@@ -203,7 +203,7 @@ async def analyze_from_extension(
     body: ExtensionAnalyzeRequest,
     principal: Principal = Depends(get_current_principal),
 ):
-    selected_model = (body.model or "").strip() or settings.CEREBRAS_MODEL
+    selected_model = (body.model or "").strip() or settings.GROQ_MODEL
     await _reject_unservable(selected_model)
 
     context = AnalysisContext(

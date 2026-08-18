@@ -248,7 +248,7 @@ async def optimize_dockerfile(
 ) -> model_scheduler.Outcome[dict]:
     settings = get_settings()
     prompt = _build_prompt(content, context)
-    primary = (model or "").strip() or settings.CEREBRAS_MODEL
+    primary = (model or "").strip() or settings.GROQ_MODEL
 
     async def call(selected_model: str) -> dict:
         response = await provider.get_client().chat.completions.create(

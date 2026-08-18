@@ -6,6 +6,11 @@ import type { ReactNode } from 'react';
 
 const LIME = '#CCFF00';
 
+export const MARKETPLACE_URL =
+  'https://marketplace.visualstudio.com/items?itemName=imageshrink.imageshrink-ai';
+
+export const EXTENSION_ID = 'imageshrink.imageshrink-ai';
+
 export const INSTALL_ANCHOR = '/extension#install';
 
 interface CodeLine {
@@ -195,11 +200,12 @@ export function VSCodeHero() {
               <Button
                 variant="contained"
                 size="large"
-                component={RouterLink}
-                to={INSTALL_ANCHOR}
+                href={MARKETPLACE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
                 sx={{ px: 3.5, py: 1.4 }}
               >
-                Install the Extension
+                Install from Marketplace
               </Button>
               <Button
                 variant="outlined"

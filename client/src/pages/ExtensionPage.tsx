@@ -6,42 +6,43 @@ import { Link as RouterLink, useLocation } from 'react-router-dom';
 import {
   EditorMockup,
   ExtensionFeatures,
+  EXTENSION_ID,
   INSTALL_ANCHOR,
+  MARKETPLACE_URL,
 } from '../components/landing/ExtensionShowcase';
 import { useAuth } from '../context/AuthContext';
 
 const LIME = '#CCFF00';
 
-const REPO_URL = 'https://github.com/Huzaifa4ever/ImageShrink-AI.git';
+const QUICK_INSTALL = `ext install ${EXTENSION_ID}`;
 
-const INSTALL_COMMANDS = `git clone ${REPO_URL}
+const CLI_INSTALL = `code --install-extension ${EXTENSION_ID}`;
+
+const SOURCE_COMMANDS = `git clone https://github.com/Huzaifa4ever/ImageShrink-AI.git
 cd ImageShrink-AI/vscode-extension
 npm install
 npm run install-local`;
 
-const MANUAL_COMMANDS = `npm run vsix
-code --install-extension imageshrink-ai.vsix --force`;
-
 const STEPS = [
   {
     n: '01',
-    title: 'Build and install',
-    desc: 'Clone the repository and run npm run install-local. That packages the extension and installs it into VS Code in one step.',
+    title: 'Install',
+    desc: 'Search for "ImageShrink" in the Extensions view and click Install. No account, no configuration.',
   },
   {
     n: '02',
-    title: 'Reload VS Code',
-    desc: 'Run "Developer: Reload Window" from the command palette, then open any Dockerfile. Findings appear immediately — the rule engine runs on your machine, so this works offline and needs no account.',
+    title: 'Open a Dockerfile',
+    desc: 'Findings appear immediately. The rule engine is bundled into the extension, so it works offline and adds no latency to typing.',
   },
   {
     n: '03',
-    title: 'Sign in for AI',
-    desc: 'Run ImageShrink: Sign In. A code appears in VS Code; approve it here in your browser and the editor connects.',
+    title: 'Fix with one click',
+    desc: 'Click the light bulb on any finding, or use Fix All to apply every safe change at once.',
   },
   {
     n: '04',
-    title: 'Analyze',
-    desc: 'Press Ctrl+Alt+D for a multi-stage rewrite, size estimate and CVE scan. Every analysis syncs to this dashboard.',
+    title: 'Go deeper',
+    desc: 'Press Ctrl+Alt+D for a full report: size before and after, a generated Dockerfile you can diff, and a CVE scan if you have Trivy installed.',
   },
 ];
 
@@ -138,10 +139,10 @@ export default function ExtensionPage() {
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mb: 3 }}>
               <Button
                 variant="contained" size="large"
-                component={RouterLink} to={INSTALL_ANCHOR}
+                href={MARKETPLACE_URL} target="_blank" rel="noopener noreferrer"
                 sx={{ px: 3.5, py: 1.4 }}
               >
-                Install the Extension
+                Install from Marketplace
               </Button>
               <Button
                 variant="outlined" size="large" component={RouterLink}
@@ -154,8 +155,12 @@ export default function ExtensionPage() {
             </Stack>
 
             <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.7 }}>
-              Built from source and installed with one command — it is not on the Visual Studio
-              Marketplace, so searching the Extensions view will not find it.
+              On the Visual Studio Marketplace - search{' '}
+              <Box component="strong" sx={{ color: 'text.primary' }}>ImageShrink</Box> in the
+              Extensions view. Free, and it works without an account.{' '}
+              <Box component={RouterLink} to={INSTALL_ANCHOR} sx={{ color: LIME }}>
+                Other ways to install
+              </Box>
             </Typography>
           </Grid>
 
@@ -181,48 +186,65 @@ export default function ExtensionPage() {
             Install
           </Typography>
           <Typography variant="h3" sx={{ fontSize: { xs: '1.6rem', md: '2.2rem' }, mb: 2 }}>
-            One command, from source.
+            Search, click, done.
           </Typography>
           <Typography variant="body2" sx={{ color: 'text.secondary', mb: 4, lineHeight: 1.8, maxWidth: 640 }}>
-            ImageShrink is installed from this repository rather than the Marketplace. You need{' '}
-            <Box component="strong" sx={{ color: 'text.primary' }}>Node.js 20+</Box>, VS Code 1.95 or
-            newer, and the{' '}
-            <Box component="code" sx={{ color: LIME }}>code</Box> command on your PATH.
+            Open the Extensions view in VS Code (<Box component="strong" sx={{ color: 'text.primary' }}>Ctrl+Shift+X</Box>),
+            search for <Box component="strong" sx={{ color: 'text.primary' }}>ImageShrink</Box>, and
+            click Install. Requires VS Code 1.95 or newer.
           </Typography>
 
+          <Stack direction="row" spacing={1.5} sx={{ mb: 4, flexWrap: 'wrap', gap: 1 }}>
+            <Button
+              variant="contained" size="large"
+              href={MARKETPLACE_URL} target="_blank" rel="noopener noreferrer"
+              sx={{ px: 3.5, py: 1.4 }}
+            >
+              View on Marketplace
+            </Button>
+          </Stack>
+
+          <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5, lineHeight: 1.8 }}>
+            Or paste this into Quick Open (<Box component="strong" sx={{ color: 'text.primary' }}>Ctrl+P</Box>):
+          </Typography>
           <Box sx={{ mb: 3 }}>
-            <CommandBlock commands={INSTALL_COMMANDS} label="INSTALL" />
+            <CommandBlock commands={QUICK_INSTALL} label="VS CODE QUICK OPEN" />
           </Box>
 
-          <Typography variant="body2" sx={{ color: 'text.secondary', mb: 5, lineHeight: 1.8 }}>
-            Then run <Box component="strong" sx={{ color: 'text.primary' }}>Developer: Reload Window</Box>{' '}
-            from the command palette and open a Dockerfile.
+          <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5, lineHeight: 1.8 }}>
+            Or from a terminal:
+          </Typography>
+          <Box sx={{ mb: 5 }}>
+            <CommandBlock commands={CLI_INSTALL} label="TERMINAL" />
+          </Box>
+
+          <Typography variant="h6" sx={{ fontSize: '1rem', mb: 1.5 }}>
+            Optional: enable CVE scanning
+          </Typography>
+          <Typography variant="body2" sx={{ color: 'text.secondary', mb: 4, lineHeight: 1.8 }}>
+            Vulnerability scanning uses{' '}
+            <Box component="a" href="https://github.com/aquasecurity/trivy#installation"
+              target="_blank" rel="noopener noreferrer" sx={{ color: LIME }}>Trivy</Box>, a single
+            binary you install separately. Everything else works without it, and the extension says
+            plainly when Trivy is missing rather than reporting an unscanned image as clean.
           </Typography>
 
           <Typography variant="h6" sx={{ fontSize: '1rem', mb: 1.5 }}>
-            If the <Box component="code" sx={{ color: LIME, fontSize: '0.9rem' }}>code</Box> command isn't available
+            Building from source
           </Typography>
           <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2.5, lineHeight: 1.8 }}>
-            Build the package yourself, then install it through the UI: open the Extensions view,
-            click the <Box component="strong" sx={{ color: 'text.primary' }}>…</Box> menu and choose{' '}
-            <Box component="strong" sx={{ color: 'text.primary' }}>Install from VSIX…</Box>, then pick the
-            generated file.
+            To run the latest development version, or to contribute. Requires Node.js 20+ and the{' '}
+            <Box component="code" sx={{ color: LIME }}>code</Box> command on your PATH.
           </Typography>
-          <Box sx={{ mb: 4 }}>
-            <CommandBlock commands={MANUAL_COMMANDS} label="MANUAL" />
+          <Box sx={{ mb: 3 }}>
+            <CommandBlock commands={SOURCE_COMMANDS} label="FROM SOURCE" />
           </Box>
 
-          <Alert severity="info" sx={{ mb: 2 }}>
-            To hack on the extension instead, open the <Box component="code">vscode-extension</Box>{' '}
-            folder in VS Code and press <Box component="strong">F5</Box>. That launches an Extension
-            Development Host with the extension loaded, and reloads it as you edit.
+          <Alert severity="info">
+            To hack on it, open the <Box component="code">vscode-extension</Box> folder in VS Code
+            and press <Box component="strong">F5</Box>. That launches an Extension Development Host
+            with the extension loaded, and reloads it as you edit.
           </Alert>
-
-          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.8 }}>
-            Updating later: pull the repository and re-run{' '}
-            <Box component="code" sx={{ color: LIME }}>npm run install-local</Box>. The{' '}
-            <Box component="code">--force</Box> flag it passes replaces the installed copy in place.
-          </Typography>
         </Container>
       </Box>
 
@@ -232,7 +254,7 @@ export default function ExtensionPage() {
             Getting started
           </Typography>
           <Typography variant="h3" sx={{ fontSize: { xs: '1.6rem', md: '2.2rem' }, mb: 5 }}>
-            Four steps, two of them optional.
+            From install to first fix.
           </Typography>
 
           <Stack spacing={0}>
@@ -279,7 +301,7 @@ export default function ExtensionPage() {
               },
               {
                 title: 'A hard offline switch',
-                body: 'Turn on "Use Local Rules Only" and the extension makes no network requests whatsoever, including sign-in. It overrides every other setting.',
+                body: 'There is nothing to turn off - the extension has no network code. Trivy and Docker are the only things it ever runs, both already on your machine, and both optional.',
               },
               {
                 title: 'Tokens in the keychain',
@@ -313,14 +335,14 @@ export default function ExtensionPage() {
             Ship leaner containers.
           </Typography>
           <Typography variant="body2" sx={{ color: 'text.secondary', mb: 4 }}>
-            Free, open source, and no account needed for linting.
+            Free on the Visual Studio Marketplace. No account, no sign-in, no servers.
           </Typography>
           <Button
             variant="contained" size="large"
-            component={RouterLink} to={INSTALL_ANCHOR}
+            href={MARKETPLACE_URL} target="_blank" rel="noopener noreferrer"
             sx={{ px: 5, py: 1.5 }}
           >
-            Install the Extension
+            Install from Marketplace
           </Button>
         </Container>
       </Box>

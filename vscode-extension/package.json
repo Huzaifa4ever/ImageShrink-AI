@@ -2,7 +2,7 @@
   "name": "imageshrink-ai",
   "displayName": "ImageShrink",
   "description": "Lint Dockerfiles as you type. Smaller base images, one-click fixes, CVE scanning and size estimates - entirely offline, no account needed.",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "publisher": "imageshrink",
   "license": "MIT",
   "engines": {
