@@ -1,5 +1,10 @@
+import logging
+
 from motor.motor_asyncio import AsyncIOMotorClient
+
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -11,13 +16,17 @@ async def connect_db() -> None:
     try:
         _client = AsyncIOMotorClient(
             settings.MONGO_URI,
-            serverSelectionTimeoutMS=5000,
+            serverSelectionTimeoutMS=settings.MONGO_SERVER_SELECTION_TIMEOUT_MS,
             tz_aware=True,
         )
         await _client.admin.command("ping")
-        print(f"MongoDB connected {settings.MONGO_DB_NAME}")
+        logger.info("MongoDB connected: %s", settings.MONGO_DB_NAME)
     except Exception as e:
-        print(f"MongoDB unavailable ({e}). The app will start, but DB operations will fail.")
+        # Logged at ERROR, not printed: this is the line an alert rule watches for, and a
+        # print() would not carry a severity for the query to filter on.
+        logger.error(
+            "MongoDB unavailable (%s). The app will start, but DB operations will fail.", e
+        )
         _client = None
 
 
@@ -25,7 +34,7 @@ async def close_db() -> None:
     global _client
     if _client:
         _client.close()
-        print(" MongoDB connection closed")
+        logger.info("MongoDB connection closed")
 
 
 def get_db():
