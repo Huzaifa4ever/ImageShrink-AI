@@ -16,6 +16,9 @@ pipeline {
     RESOURCE_GROUP = 'imageshrink-rg'
     CONTAINER_APP  = 'imageshrink-api'
 
+    // Must match the port the image actually listens on (server/Dockerfile: PORT=8000).
+    TARGET_PORT    = '8000'
+
     KEEP_IMAGES    = '5'
 
     TRIVY_VERSION  = '0.69.3'
@@ -207,6 +210,14 @@ pipeline {
           az containerapp registry set \
             --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" \
             --server "$ACR_LOGIN" --identity system --output none
+
+          # Deploying a new image does not touch ingress, so a target port left over from
+          # whatever the app was first created with (the quickstart sample listens on 80)
+          # silently survives every deploy: the revision goes Healthy, and ingress forwards
+          # to a port nothing listens on. Assert the port the image really serves instead.
+          az containerapp ingress update \
+            --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" \
+            --target-port "$TARGET_PORT" --output none
         '''
 
         script {
@@ -219,7 +230,16 @@ pipeline {
             ''',
             returnStdout: true
           ).trim()
-          echo "currently serving: ${env.PREVIOUS_REVISION ?: '(none — first deploy)'}"
+          env.PREVIOUS_IMAGE = sh(
+            script: '''
+              az containerapp revision list \
+                --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" \
+                --query "[?properties.active && properties.trafficWeight>\\`0\\`].properties.template.containers[0].image | [0]" \
+                -o tsv 2>/dev/null || true
+            ''',
+            returnStdout: true
+          ).trim()
+          echo "currently serving: ${env.PREVIOUS_REVISION ?: '(none — first deploy)'} (${env.PREVIOUS_IMAGE ?: 'no image'})"
         }
 
         retry(2) {
@@ -269,39 +289,78 @@ pipeline {
                    --query properties.configuration.ingress.fqdn -o tsv)
           echo "probing https://$FQDN/health"
 
+          CODE=000
           for i in $(seq 1 40); do
-            BODY=$(curl -fsS --max-time 10 "https://$FQDN/health" 2>/dev/null || true)
+            # Keep the status code and the body. Discarding them (curl -f ... 2>/dev/null)
+            # makes every failure look identical: "never became healthy" cannot tell a
+            # crashing container (503) from a wrong ingress port or a bad path (404).
+            CODE=$(curl -s -o /tmp/health.$$ -w '%{http_code}' --max-time 10 "https://$FQDN/health") || CODE=000
+            BODY=$(cat /tmp/health.$$ 2>/dev/null || true)
 
-            if printf '%s' "$BODY" | grep -q '"status":"ok"'; then
-              RUNNING=$(printf '%s' "$BODY" | sed -n 's/.*"build":"\\([^"]*\\)".*/\\1/p')
+            if [ "$CODE" = 200 ] && printf '%s' "$BODY" | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+              RUNNING=$(printf '%s' "$BODY" | sed -n 's/.*"build"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p')
               echo "healthy after $((i * 10))s — build ${RUNNING:-unknown}, expected $IMAGE_TAG"
 
               if [ -n "$RUNNING" ] && [ "$RUNNING" != "$IMAGE_TAG" ]; then
                 sleep 10
                 continue
               fi
+              rm -f /tmp/health.$$
               exit 0
+            fi
+
+            if [ $((i % 5)) = 1 ]; then
+              echo "  attempt $i: HTTP $CODE $(printf '%s' "$BODY" | tr -d '\\n' | cut -c1-200)"
             fi
             sleep 10
           done
 
-          echo "never became healthy within 400s"
+          rm -f /tmp/health.$$
+          echo "never became healthy within 400s — last status HTTP $CODE"
+          echo "  000 = nothing answered; 404 = wrong path or ingress port; 503 = no replica running"
           exit 1
         '''
       }
       post {
         failure {
+          sh '''
+            echo "--- ingress ---"
+            az containerapp show --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" \
+              --query "properties.configuration.ingress.{fqdn:fqdn,targetPort:targetPort,external:external}" \
+              -o json || true
+
+            echo "--- revisions ---"
+            az containerapp revision list --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" \
+              --query "[].{name:name,active:properties.active,created:properties.createdTime,state:properties.provisioningState,health:properties.healthState,replicas:properties.replicas}" \
+              -o table || true
+
+            REV=$(az containerapp show --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" \
+                    --query properties.latestRevisionName -o tsv 2>/dev/null || true)
+
+            if [ -n "$REV" ]; then
+              echo "--- system log ($REV) — why the replica did or did not start ---"
+              az containerapp logs show --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" \
+                --revision "$REV" --type system --tail 30 || true
+
+              echo "--- container log ($REV) — what the app itself printed ---"
+              az containerapp logs show --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" \
+                --revision "$REV" --tail 100 || true
+            else
+              echo "(no revision name available — skipping logs)"
+            fi
+          '''
+
           script {
-            if (env.PREVIOUS_REVISION) {
-              echo "rolling back to ${env.PREVIOUS_REVISION}"
+            if (env.PREVIOUS_IMAGE?.startsWith(env.ACR_LOGIN)) {
+              echo "rolling back to ${env.PREVIOUS_IMAGE}"
               sh '''
                 set -eu
-                az containerapp ingress traffic set \
+                az containerapp update \
                   --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" \
-                  --revision-weight "$PREVIOUS_REVISION=100" --output none
+                  --image "$PREVIOUS_IMAGE" --output none
               '''
             } else {
-              echo 'No previous revision to roll back to — first deploy.'
+              echo "Not rolling back — previous image was ${env.PREVIOUS_IMAGE ?: '(none)'}, not one of ours."
             }
           }
         }
