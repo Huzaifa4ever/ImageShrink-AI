@@ -14,7 +14,7 @@ from app.api.errors import scheduler_http_error
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.analysis import AnalysisDocument
-from app.services import rule_engine
+from app.services import dockerfile_guard, rule_engine
 from app.services.ai_optimizer import AnalysisContext, optimize_dockerfile
 from app.services.dockerfile_parser import parse_dockerfile, to_dict
 from app.services.model_registry import is_servable
@@ -71,6 +71,15 @@ async def _run_analysis(
     bloat_candidates: list[str],
     client: dict,
 ) -> tuple[AnalysisDocument, Outcome]:
+    # Before spending an AI call: the model cannot tell that it has been handed a PDF or a
+    # greeting, and will answer with an invented Dockerfile and invented savings that read
+    # exactly like a real result. Refuse here instead, for every caller.
+    if rejection := dockerfile_guard.check(content):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=rejection.message,
+        )
+
     stages_dict = to_dict(parse_dockerfile(content))
 
     findings = rule_engine.analyze(
@@ -164,6 +173,14 @@ async def analyze_dockerfile(
     """Web workbench upload."""
     selected_model = (model or "").strip() or settings.GROQ_MODEL
     await _reject_unservable(selected_model)
+
+    # Checked before the body is read: a wrong pick in the file dialog is the common case,
+    # and there is no reason to stream a PDF to the server to tell the user it is a PDF.
+    if rejection := dockerfile_guard.check_filename(file.filename or ""):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=rejection.message,
+        )
 
     max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
     content_bytes = await file.read()

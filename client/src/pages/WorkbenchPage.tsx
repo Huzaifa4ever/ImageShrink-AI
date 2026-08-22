@@ -7,11 +7,15 @@ import {
 import { CloudUpload, AutoAwesome, ContentPaste, Memory, Refresh } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { dockerService } from '../services/dockerService';
+import { apiErrorMessage } from '../services/api';
+import { validateDockerfileContent, validateDockerfileName } from '../utils/validation';
 import type { AiModel, ModelStatus } from '../types';
+
+const UPLOAD_ACCEPT = '.dockerfile,.containerfile,Dockerfile,Containerfile';
 
 const STATUS_META: Record<ModelStatus, { color: string; label: string; hint: string }> = {
   available: { color: '#4ADE80', label: 'Available', hint: 'Answered a live test request just now' },
-  busy: { color: '#FBBF24', label: 'Busy', hint: 'Serving, but queueing behind other traffic — retry shortly' },
+  busy: { color: '#FBBF24', label: 'Busy', hint: 'Serving, but queueing behind other traffic - retry shortly' },
   unavailable: { color: '#FF6B6B', label: 'Unavailable', hint: 'Not served by the provider right now' },
   unknown: { color: '#A1A1AA', label: 'Not checked', hint: 'Listed by the provider, but not health-checked yet' },
 };
@@ -35,11 +39,6 @@ export default function WorkbenchPage() {
   const [probed, setProbed] = useState(false);
   const [autoSwitched, setAutoSwitched] = useState<string | null>(null);
 
-  /**
-   * Load the provider's live catalog. `probe` additionally pings each model, which is
-   * what separates "listed" from "actually answering" — the failure users used to hit
-   * only after waiting through a full analysis.
-   */
   const loadModels = useCallback(async (probe: boolean) => {
     if (probe) setChecking(true);
     try {
@@ -63,24 +62,42 @@ export default function WorkbenchPage() {
 
   useEffect(() => { void loadModels(false); }, [loadModels]);
 
+  const acceptFile = useCallback((candidate: File) => {
+    const problem = validateDockerfileName(candidate.name);
+    if (problem) { setFile(null); setError(problem); return; }
+    setError(null);
+    setFile(candidate);
+  }, []);
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault(); setIsDragging(false);
     const dropped = e.dataTransfer.files[0];
-    if (dropped) setFile(dropped);
-  }, []);
+    if (dropped) acceptFile(dropped);
+  }, [acceptFile]);
 
   const handleAnalyze = async () => {
-    setError(null); setLoading(true);
+    setError(null);
+
+    let uploadFile: File;
+    if (mode === 'paste') {
+      const problem = validateDockerfileContent(pasteContent);
+      if (problem) { setError(problem); return; }
+      uploadFile = new File([new Blob([pasteContent], { type: 'text/plain' })], 'Dockerfile', { type: 'text/plain' });
+    } else if (file) {
+      const problem = validateDockerfileName(file.name);
+      if (problem) { setError(problem); return; }
+      uploadFile = file;
+    } else {
+      setError('Please upload or paste a Dockerfile first.');
+      return;
+    }
+
+    setLoading(true);
     try {
-      let uploadFile: File;
-      if (mode === 'paste') {
-        uploadFile = new File([new Blob([pasteContent], { type: 'text/plain' })], 'Dockerfile', { type: 'text/plain' });
-      } else if (file) { uploadFile = file; }
-      else { setError('Please upload or paste a Dockerfile first.'); setLoading(false); return; }
       const result = await dockerService.analyzeDockerfile(uploadFile, selectedModel);
       navigate(`/analysis/${result.data._id}`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Analysis failed.');
+      setError(apiErrorMessage(err, 'Analysis failed.'));
     } finally { setLoading(false); }
   };
 
@@ -93,7 +110,7 @@ export default function WorkbenchPage() {
         <Box sx={{ mb: 5 }}>
           <Typography className="mono" sx={{ fontSize: '0.7rem', color: '#CCFF00', mb: 1, letterSpacing: '0.12em', textTransform: 'uppercase' }}>Workbench</Typography>
           <Typography variant="h3" sx={{ fontWeight: 700, mb: 1, fontSize: { xs: '1.6rem', md: '2rem' } }}>Analyze your Dockerfile</Typography>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>Upload or paste — the AI handles the rest.</Typography>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>Upload or paste - the AI handles the rest.</Typography>
         </Box>
 
         <Stack direction="row" spacing={1} sx={{ mb: 3 }}>
@@ -113,12 +130,16 @@ export default function WorkbenchPage() {
               bgcolor: isDragging ? alpha('#CCFF00', 0.03) : file ? alpha('#4ADE80', 0.03) : 'transparent',
               transition: 'all 0.2s', cursor: 'pointer', mb: 3, '&:hover': { borderColor: alpha('#CCFF00', 0.5) } }}>
             <CardContent sx={{ py: 7, textAlign: 'center' }}>
-              <input id="file-input" type="file" hidden accept=".dockerfile,Dockerfile,text/plain" onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(f); }} />
+              <input id="file-input" type="file" hidden accept={UPLOAD_ACCEPT}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) acceptFile(f); e.target.value = ''; }} />
               <CloudUpload sx={{ fontSize: 40, color: file ? '#4ADE80' : 'text.secondary', mb: 2, opacity: 0.7 }} />
               {file ? (<><Typography sx={{ fontWeight: 600, color: '#4ADE80' }}>{file.name}</Typography>
-                <Typography className="mono" variant="caption" sx={{ color: 'text.secondary', mt: 0.5, display: 'block' }}>{(file.size / 1024).toFixed(1)} KB — click to replace</Typography></>
+                <Typography className="mono" variant="caption" sx={{ color: 'text.secondary', mt: 0.5, display: 'block' }}>{(file.size / 1024).toFixed(1)} KB - click to replace</Typography></>
               ) : (<><Typography sx={{ color: 'text.secondary', fontWeight: 500 }}>Drop your Dockerfile here</Typography>
-                <Typography className="mono" variant="caption" sx={{ color: 'text.secondary', mt: 0.5, display: 'block' }}>or click to browse</Typography></>)}
+                <Typography className="mono" variant="caption" sx={{ color: 'text.secondary', mt: 0.5, display: 'block' }}>or click to browse</Typography>
+                <Typography className="mono" variant="caption" sx={{ color: 'text.disabled', mt: 1.5, display: 'block', fontSize: '0.62rem' }}>
+                  Dockerfile · Dockerfile.prod · prod.Dockerfile · Containerfile
+                </Typography></>)}
             </CardContent>
           </Card>
         )}
@@ -179,11 +200,10 @@ export default function WorkbenchPage() {
         {autoSwitched && (
           <Alert severity="info" onClose={() => setAutoSwitched(null)}
             sx={{ mt: 2, bgcolor: alpha('#38BDF8', 0.06), border: '1px solid', borderColor: alpha('#38BDF8', 0.2) }}>
-            <Typography variant="caption">Switched you to <strong>{autoSwitched}</strong> — the previous choice isn't taking requests right now.</Typography>
+            <Typography variant="caption">Switched you to <strong>{autoSwitched}</strong> - the previous choice isn't taking requests right now.</Typography>
           </Alert>
         )}
 
-        {/* ── Model availability ─────────────────────────────────────────── */}
         <Card sx={{ mt: 6 }}>
           <CardContent>
             <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
@@ -203,7 +223,7 @@ export default function WorkbenchPage() {
             <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.7, mb: 2 }}>
               These models run on shared inference hardware, so capacity moves around during the day.
               A model marked <Box component="span" sx={{ color: '#FBBF24', fontWeight: 600 }}>Busy</Box> is
-              queueing behind other traffic — that is provider load, <strong>not</strong> a problem with your
+              queueing behind other traffic - that is provider load, <strong>not</strong> a problem with your
               Dockerfile or with ImageShrink. Run the check below, pick a model marked{' '}
               <Box component="span" sx={{ color: '#4ADE80', fontWeight: 600 }}>Available</Box>, and your
               analysis will go straight through.
@@ -247,7 +267,7 @@ export default function WorkbenchPage() {
                         </Stack>
                       </Stack>
                       <Typography className="mono" variant="caption" sx={{ display: 'block', color: 'text.disabled', fontSize: '0.62rem', mt: 0.3, ml: 2.3 }}>
-                        {m.id}{m.reason ? ` — ${m.reason}` : ''}
+                        {m.id}{m.reason ? ` - ${m.reason}` : ''}
                       </Typography>
                     </Box>
                   );

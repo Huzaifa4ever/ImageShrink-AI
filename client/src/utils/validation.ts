@@ -1,6 +1,34 @@
 const USERNAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{2,31}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+const DOCKERFILE_NAME_RE = /^((docker|container)file(\.[\w.-]+)?|[\w.-]+\.(docker|container)file)$/i;
+
+export function validateDockerfileName(filename: string): string | null {
+  const name = (filename || '').trim().replace(/\\/g, '/').split('/').pop() ?? '';
+  if (!name) return 'That file has no name.';
+  if (!DOCKERFILE_NAME_RE.test(name)) {
+    return `'${name}' is not a Dockerfile. Choose a file named Dockerfile, Dockerfile.<something>, `
+      + '<something>.Dockerfile or Containerfile - or use Paste Content instead.';
+  }
+  return null;
+}
+
+export function validateDockerfileContent(content: string): string | null {
+  const meaningful = content
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'));
+
+  if (!meaningful.length) {
+    return 'There is nothing to analyze - add the contents of a Dockerfile first.';
+  }
+  if (!meaningful.some((line) => /^FROM\s+\S/i.test(line))) {
+    return 'This does not look like a Dockerfile: it has no FROM instruction, which every '
+      + 'Dockerfile must start with. Paste the contents of a Dockerfile and try again.';
+  }
+  return null;
+}
+
 export const MIN_PASSWORD_LENGTH = 8;
 export const MAX_PASSWORD_BYTES = 72;
 

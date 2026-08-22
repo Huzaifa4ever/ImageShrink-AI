@@ -69,6 +69,38 @@ export default function AnalysisDetail({ analysis }: { analysis: AnalysisResult 
       </Card>
 
       <Grid container spacing={3}>
+        <Grid size={12}>
+          <Card>
+            <CardContent>
+              <Stack direction="row" sx={{ alignItems: 'center', mb: 2 }} spacing={1}>
+                <AutoAwesome sx={{ color: '#CCFF00', fontSize: '1rem' }} />
+                <Typography className="mono" sx={{ fontSize: '0.7rem', color: '#CCFF00', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Optimized Dockerfile</Typography>
+              </Stack>
+              <Box component="pre" sx={{ p: 2.5, borderRadius: 2, overflowX: 'auto', background: '#0C0C0E',
+                border: '1px solid', borderColor: alpha('#3F3F46', 0.3), fontSize: '0.78rem', lineHeight: 1.8,
+                color: '#E4E4E7', fontFamily: '"JetBrains Mono", monospace', maxHeight: 420 }}>
+                {analysis.optimizedDockerfile || '# Optimized Dockerfile will appear here after analysis'}
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {analysis.aiInsights && (
+          <Grid size={12}>
+            <Card>
+              <CardContent>
+                <Stack direction="row" sx={{ alignItems: 'center', mb: 2 }} spacing={1}>
+                  <AutoAwesome sx={{ color: '#CCFF00', fontSize: '1rem' }} />
+                  <Typography className="mono" sx={{ fontSize: '0.7rem', color: '#CCFF00', letterSpacing: '0.06em', textTransform: 'uppercase' }}>AI Insights</Typography>
+                </Stack>
+                <Box sx={{ p: 2, borderRadius: 2, bgcolor: alpha('#CCFF00', 0.04), border: '1px solid', borderColor: alpha('#CCFF00', 0.15) }}>
+                  <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.7 }}>{analysis.aiInsights}</Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
+
         <Grid size={{ xs: 12, md: 6 }}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
@@ -131,7 +163,7 @@ export default function AnalysisDetail({ analysis }: { analysis: AnalysisResult 
 
               {multiPackageCves > 0 && (
                 <Typography variant="caption" sx={{ color: 'text.disabled', display: 'block', mb: 1.5, lineHeight: 1.6 }}>
-                  {multiPackageCves} of these CVEs affect more than one package — a single flaw in a
+                  {multiPackageCves} of these CVEs affect more than one package - a single flaw in a
                   source package shows up in every binary built from it. Each is listed once, with all
                   affected packages inside, rather than repeated per package.
                 </Typography>
@@ -164,7 +196,7 @@ export default function AnalysisDetail({ analysis }: { analysis: AnalysisResult 
                   )}
                   {unscanned.map((s) => (
                     <Typography key={s.image} className="mono" variant="caption" sx={{ display: 'block', fontSize: '0.65rem' }}>
-                      {s.image} not scanned — {s.reason}
+                      {s.image} not scanned - {s.reason}
                     </Typography>
                   ))}
                 </Alert>
@@ -236,7 +268,7 @@ export default function AnalysisDetail({ analysis }: { analysis: AnalysisResult 
                 <Typography variant="caption" sx={{ color: scanUnavailable ? 'text.secondary' : '#4ADE80' }}>
                   {scanUnavailable
                     ? 'Dockerfile was not scanned for misconfigurations.'
-                    : 'No misconfigurations found — Dockerfile passed every Trivy check.'}
+                    : 'No misconfigurations found - Dockerfile passed every Trivy check.'}
                 </Typography>
               ) : (
                 <Grid container spacing={1.5}>
@@ -272,27 +304,6 @@ export default function AnalysisDetail({ analysis }: { analysis: AnalysisResult 
           </Card>
         </Grid>
 
-        <Grid size={12}>
-          <Card>
-            <CardContent>
-              <Stack direction="row" sx={{ alignItems: 'center', mb: 2 }} spacing={1}>
-                <AutoAwesome sx={{ color: '#CCFF00', fontSize: '1rem' }} />
-                <Typography className="mono" sx={{ fontSize: '0.7rem', color: '#CCFF00', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Optimized Dockerfile</Typography>
-              </Stack>
-              <Box component="pre" sx={{ p: 2.5, borderRadius: 2, overflowX: 'auto', background: '#0C0C0E',
-                border: '1px solid', borderColor: alpha('#3F3F46', 0.3), fontSize: '0.78rem', lineHeight: 1.8,
-                color: '#E4E4E7', fontFamily: '"JetBrains Mono", monospace', maxHeight: 420 }}>
-                {analysis.optimizedDockerfile || '# Optimized Dockerfile will appear here after analysis'}
-              </Box>
-              {analysis.aiInsights && (
-                <Box sx={{ mt: 2, p: 2, borderRadius: 2, bgcolor: alpha('#CCFF00', 0.04), border: '1px solid', borderColor: alpha('#CCFF00', 0.15) }}>
-                  <Typography className="mono" variant="caption" sx={{ color: '#CCFF00', display: 'block', mb: 0.5, fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.08em' }}>AI Insights</Typography>
-                  <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.7 }}>{analysis.aiInsights}</Typography>
-                </Box>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
       </Grid>
     </>
   );

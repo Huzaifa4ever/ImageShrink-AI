@@ -58,27 +58,6 @@ const SETTINGS = [
   ['imageshrink.telemetry', 'false', 'Anonymous usage data. Off by default.'],
 ];
 
-const ENDPOINTS = [
-  ['POST', '/auth/signup', 'Create an account and sign in.'],
-  ['POST', '/auth/login', 'Sign in with a username or email.'],
-  ['POST', '/auth/refresh', 'Exchange a refresh token for a new pair. Rotates on every use.'],
-  ['POST', '/auth/logout', 'End the current session.'],
-  ['GET', '/auth/me', 'The signed-in user.'],
-  ['POST', '/auth/device/start', 'Begin a device login (used by the extension).'],
-  ['POST', '/auth/device/token', 'Redeem an approved device code. 202 while pending.'],
-  ['POST', '/auth/device/approve', 'Approve a device login. Requires a browser session.'],
-  ['POST', '/analyze', 'Analyze an uploaded Dockerfile (multipart).'],
-  ['POST', '/analyze/extension', 'Analyze with workspace context (JSON).'],
-  ['POST', '/analyze/rules', 'Deterministic findings only. No AI, no rate limit.'],
-  ['GET', '/analyze/history', 'Your analyses. Supports q, source, favorite, sort, page.'],
-  ['GET', '/analyze/stats', 'Totals for the dashboard.'],
-  ['PATCH', '/analyze/{id}/favorite', 'Mark or unmark a favorite.'],
-  ['DELETE', '/analyze/{id}', 'Delete an analysis.'],
-  ['GET', '/account/sessions', 'Connected devices.'],
-  ['GET', '/account/api-keys', 'Your API keys.'],
-  ['GET', '/rules', 'This rule catalog. Public.'],
-];
-
 function SectionHeading({ eyebrow, title }: { eyebrow: string; title: string }) {
   return (
     <>
@@ -153,7 +132,7 @@ export default function DocsPage() {
             The two engines are separate implementations, so they are held to agreement by a parity
             test that runs both over a corpus of Dockerfiles and fails on any disagreement about
             which rules fired, where, or with which fix. Their user-facing wording is not
-            duplicated at all — both read the catalog below, which is also what this page renders.
+            duplicated at all - both read the catalog below, which is also what this page renders.
           </Typography>
           <Alert severity="info" sx={{ mt: 1 }}>
             <strong>Scores</strong> come from the rule engine, not the model. That makes them
@@ -172,7 +151,7 @@ export default function DocsPage() {
 
         {error && (
           <Alert severity="warning" sx={{ mb: 4 }}>
-            {error} The rule reference is served by the API — check that the backend is running.
+            {error} The rule reference is served by the API - check that the backend is running.
           </Alert>
         )}
 
@@ -250,13 +229,13 @@ export default function DocsPage() {
 
                       {rule.securityImpact && (
                         <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.8 }}>
-                          <Box component="span" sx={{ color: '#FF6B6B', fontWeight: 600 }}>Security — </Box>
+                          <Box component="span" sx={{ color: '#FF6B6B', fontWeight: 600 }}>Security - </Box>
                           {rule.securityImpact}
                         </Typography>
                       )}
                       {rule.performanceImpact && (
                         <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.8 }}>
-                          <Box component="span" sx={{ color: '#FBBF24', fontWeight: 600 }}>Performance — </Box>
+                          <Box component="span" sx={{ color: '#FBBF24', fontWeight: 600 }}>Performance - </Box>
                           {rule.performanceImpact}
                         </Typography>
                       )}
@@ -319,37 +298,19 @@ export default function DocsPage() {
           </Box>
         </Box>
 
-        {/* ── API ──────────────────────────────────────── */}
-        <SectionHeading eyebrow="API" title="REST endpoints" />
-        <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3, lineHeight: 1.8 }}>
-          All paths are relative to <Box component="code" sx={{ color: LIME }}>/api/v1</Box>. Every
-          endpoint except <Box component="code" sx={{ color: LIME }}>/rules</Box> and the auth
-          entry points requires <Box component="code">Authorization: Bearer &lt;token&gt;</Box> —
-          either an access token or an <Box component="code">isk_</Box> API key. Responses are
-          wrapped in <Box component="code">{'{ success, data, message? }'}</Box>. Interactive docs
-          are at <Box component="code">/docs</Box> on the backend.
+        <SectionHeading eyebrow="Input" title="What can be analyzed" />
+        <Typography variant="body2" sx={{ color: 'text.secondary', mb: 6, lineHeight: 1.85 }}>
+          Uploads must be a Dockerfile: <Box component="code" sx={{ color: LIME }}>Dockerfile</Box>,{' '}
+          <Box component="code" sx={{ color: LIME }}>Dockerfile.&lt;something&gt;</Box>,{' '}
+          <Box component="code" sx={{ color: LIME }}>&lt;something&gt;.Dockerfile</Box> or{' '}
+          <Box component="code" sx={{ color: LIME }}>Containerfile</Box>. Pasted text is held to
+          the same standard by content instead of by name - it needs at least one{' '}
+          <Box component="code">FROM</Box>, which every Dockerfile has by definition, and it has
+          to read as Docker instructions rather than prose. Anything else is refused before it
+          reaches the AI. This matters more than it sounds: a language model handed a PDF or a
+          sentence will not object - it will invent a plausible Dockerfile and plausible savings
+          figures, and the answer looks exactly like a real one. Refusing is the honest result.
         </Typography>
-
-        <Stack spacing={0} sx={{ mb: 6 }}>
-          {ENDPOINTS.map(([method, path, desc]) => (
-            <Stack
-              key={`${method} ${path}`}
-              direction={{ xs: 'column', sm: 'row' }}
-              spacing={{ xs: 0.5, sm: 2 }}
-              sx={{ py: 1.4, borderBottom: '1px solid', borderColor: alpha('#3F3F46', 0.25) }}
-            >
-              <Typography className="mono" sx={{ fontSize: '0.7rem', color: LIME, minWidth: 54, fontWeight: 700 }}>
-                {method}
-              </Typography>
-              <Typography className="mono" sx={{ fontSize: '0.76rem', color: '#E4E4E7', minWidth: 240 }}>
-                {path}
-              </Typography>
-              <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.83rem' }}>
-                {desc}
-              </Typography>
-            </Stack>
-          ))}
-        </Stack>
 
         <Divider sx={{ my: 5 }} />
 
@@ -361,7 +322,7 @@ export default function DocsPage() {
           automatically, with the failing model put in a short cooldown so the retry lands
           elsewhere. When every candidate is exhausted the API returns <strong>429</strong> with a{' '}
           <Box component="code">Retry-After</Box> header, and says how long to wait. If a fallback
-          model answered, the response says so — a substitution is never silent.
+          model answered, the response says so - a substitution is never silent.
         </Typography>
       </Container>
     </Box>
