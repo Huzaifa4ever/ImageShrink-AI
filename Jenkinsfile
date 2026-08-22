@@ -1,4 +1,9 @@
 
+String scopeFlag(String output, String key, String fallback) {
+  String hit = output.readLines().find { it.startsWith(key + '=') }
+  return hit == null ? fallback : hit.substring(key.length() + 1)
+}
+
 pipeline {
   agent any
 
@@ -71,13 +76,14 @@ pipeline {
             echo 'FULL_BUILD requested - change detection skipped.'
           }
 
-          sh(script: "sh ci/changed-scopes.sh ${base}", returnStdout: true)
-            .trim()
-            .readLines()
-            .each { line ->
-              def parts = line.split('=', 2)
-              if (parts.size() == 2) { env[parts[0]] = parts[1] }
-            }
+          String scopes = sh(script: "sh ci/changed-scopes.sh ${base}", returnStdout: true).trim()
+
+          env.REASON     = scopeFlag(scopes, 'REASON', 'unknown')
+          env.BACKEND    = scopeFlag(scopes, 'BACKEND', 'true')
+          env.FRONTEND   = scopeFlag(scopes, 'FRONTEND', 'true')
+          env.PARITY     = scopeFlag(scopes, 'PARITY', 'true')
+          env.DEPLOY_API = scopeFlag(scopes, 'DEPLOY_API', 'true')
+          env.DEPLOY_WEB = scopeFlag(scopes, 'DEPLOY_WEB', 'true')
 
           env.NEEDS_AZURE = (env.DEPLOY_API == 'true' || env.DEPLOY_WEB == 'true') ? 'true' : 'false'
 
