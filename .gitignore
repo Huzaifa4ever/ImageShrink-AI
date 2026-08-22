@@ -4,6 +4,7 @@ node_modules/
 venv/
 .venv/
 .ci-venv/
+.parity-venv/
 env/
 
 client/dist/

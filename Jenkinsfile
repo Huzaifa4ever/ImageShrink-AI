@@ -97,10 +97,22 @@ pipeline {
           steps {
             sh '''
               set -eu
+              cd server
+              python3 -m venv .parity-venv
+              ./.parity-venv/bin/pip install --quiet --upgrade pip
+              ./.parity-venv/bin/pip install --quiet -r requirements.txt
+            '''
+            sh '''
+              set -eu
               cd vscode-extension
               npm ci --silent
-              npm test
+              PARITY_PYTHON="$WORKSPACE/server/.parity-venv/bin/python" npm test
             '''
+          }
+          post {
+            always {
+              sh 'rm -rf server/.parity-venv || true'
+            }
           }
         }
 

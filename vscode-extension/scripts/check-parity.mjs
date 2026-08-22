@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -184,7 +184,27 @@ for case in cases:
 print(json.dumps(out))
 `;
 
-const pythonOut = execFileSync(join(serverRoot, 'venv', 'bin', 'python'), ['-c', pythonScript], {
+function resolvePython() {
+  const candidates = [
+    process.env.PARITY_PYTHON,
+    join(serverRoot, 'venv', 'bin', 'python'),
+    join(serverRoot, '.ci-venv', 'bin', 'python'),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+
+  console.error(
+    'check-parity: no Python interpreter with the server dependencies installed.\n' +
+      `  looked at: ${candidates.join(', ')}\n` +
+      '  create server/venv (python3 -m venv venv && venv/bin/pip install -r requirements.txt)\n' +
+      '  or set PARITY_PYTHON to an interpreter that can import app.services.rule_engine.'
+  );
+  process.exit(1);
+}
+
+const pythonOut = execFileSync(resolvePython(), ['-c', pythonScript], {
   cwd: serverRoot,
   input: payload,
   env: { ...process.env, PYTHONPATH: serverRoot },

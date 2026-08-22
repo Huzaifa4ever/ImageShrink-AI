@@ -53,6 +53,7 @@ pytest-report.xml
 trivy-report.*
 trivy-image-report.*
 server/.ci-venv
+server/.parity-venv
 
 .DS_Store
 Thumbs.db
