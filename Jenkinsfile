@@ -199,6 +199,16 @@ pipeline {
     stage('Deploy API') {
       options { timeout(time: 12, unit: 'MINUTES') }
       steps {
+        sh '''
+          set -eu
+          az containerapp identity assign \
+            --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" \
+            --system-assigned --output none
+          az containerapp registry set \
+            --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" \
+            --server "$ACR_LOGIN" --identity system --output none
+        '''
+
         script {
           env.PREVIOUS_REVISION = sh(
             script: '''
