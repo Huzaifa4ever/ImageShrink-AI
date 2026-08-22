@@ -3,6 +3,19 @@
 > Multi-Stage Docker Image Shrinker & Layer Auditor - web app, REST API and VS Code extension.
 > Deterministic Dockerfile linting plus AI-powered rewrites via Groq.
 
+## Architecture
+
+![ImageShrink-AI architecture](client/public/architecture.png)
+
+Read it left to right: a commit enters at **Source & build**, becomes an image in **Deploy
+targets**, becomes a running revision in **Runtime**, and is watched by **Monitoring & alerts**.
+Every arrow between the columns is a real handoff - `Push` uploads the image, the app pulls it
+with a managed identity, `Deploy` creates the revision, `Verify` probes `/health` and rolls back
+if it fails, and the running app's telemetry is what raises the alerts.
+
+Everything on it is read from this repository rather than drawn from memory - the resource
+names, replica counts, rule counts and alert thresholds are the real ones.
+
 ## Project Structure
 
 ```
@@ -27,7 +40,8 @@ ImageShrink-AI/
 │   │   ├── services/             # api (auto-refresh), auth, docker, account, extension
 │   │   └── types/
 │   ├── public/
-│   │   └── staticwebapp.config.json   # SPA fallback routing for static hosting
+│   │   ├── staticwebapp.config.json   # SPA fallback routing for static hosting
+│   │   └── architecture.png           # The diagram above, also served by the site
 │   └── .env.example
 │
 ├── server/                       # FastAPI + MongoDB backend
@@ -46,6 +60,7 @@ ImageShrink-AI/
 │   │       ├── model_registry.py     # Live catalog + quota-aware health probes
 │   │       ├── ai_optimizer.py       # Prompts + hard normalization of model output
 │   │       ├── dockerfile_lexer.py   # Instruction parsing with source positions
+│   │       ├── dockerfile_guard.py   # Refuses non-Dockerfiles before any AI call
 │   │       ├── rule_engine.py        # 24 deterministic rules + scoring
 │   │       ├── trivy_scanner.py      # CVE + misconfig scanning
 │   │       ├── google_auth.py        # Verifies Google Sign-In ID tokens
@@ -53,10 +68,16 @@ ImageShrink-AI/
 │   │       ├── email_token_service.py # Single-use verify / reset links
 │   │       └── auth_service.py, session_service.py, device_flow.py, api_key_service.py
 │   ├── scripts/                  # check_auth_flow.py, check_analysis_flow.py
-│   ├── tests/                    # 133 unit tests
+│   ├── tests/                    # 146 unit tests
 │   ├── Dockerfile                # Multi-stage; build from the REPO ROOT, not server/
 │   ├── .env.example
 │   └── run.py
+│
+├── ci/                           # Shell used by the pipeline, runnable on its own
+│   ├── changed-scopes.sh         # Decides which stages a commit actually needs
+│   └── cached-install.sh         # Skips an install when its lock files are unchanged
+│
+├── Jenkinsfile                   # The pipeline in the diagram's first column
 │
 └── vscode-extension/             # Standalone VS Code extension - no backend, no account
     ├── src/
@@ -290,6 +311,31 @@ Base images that cannot be scanned are reported rather than silently dropped:
 The response carries `scanner.status` - `ok`, `partial`, `unavailable`, or `disabled` - and
 the UI keys off it so a failed scan is never rendered as a clean result.
 
+## Input Validation
+
+Before anything reaches the AI, `dockerfile_guard.py` decides whether the input *is* a
+Dockerfile. This is not politeness - a model handed a PDF, a greeting or a prompt-injection
+attempt does not object. It answers with an invented Dockerfile and invented savings, and that
+reads exactly like a real result.
+
+The checks are deterministic rather than another model call: free, and impossible to talk out of
+a rejection. The rule they enforce is Docker's own.
+
+| Input | Refused because |
+|---|---|
+| `thesis.pdf` | not a Dockerfile filename - checked before the body is even read |
+| binary content | contains NUL bytes, so it is not text |
+| empty / comments only | there is nothing to analyse |
+| `hello how are you?` | no `FROM`, which every Dockerfile must have |
+| `FROM what is the capital of Pakistan` | `FROM` takes one image, optionally `AS <name>`; Docker would reject the file too |
+| prose with a stray `FROM` | most lines are not Docker instructions |
+
+Uploads must be named `Dockerfile`, `Dockerfile.<something>`, `<something>.Dockerfile` or
+`Containerfile`. Pasted text is held to the same standard by content instead of by name.
+
+A base image that does not exist is *not* refused - that is a pull failure, not a syntax error,
+and not this code's call to make.
+
 ## Rule Engine
 
 24 deterministic rules across size, security, performance and maintainability. No model
@@ -330,13 +376,21 @@ When everything is exhausted the API returns `429` with `Retry-After`. When a fa
 answered, the response says so in `scheduling` - a substitution is never silent.
 
 Health probes are quota-aware: a probe *is* a real completion, so probing three models would
-otherwise consume three of the five requests a minute allows. The registry reports
-"quota used, free in Ns" without spending a request.
+otherwise consume three of the three requests a minute allows
+(`MODEL_REQUESTS_PER_MINUTE`, default `3`, over a `MODEL_RATE_WINDOW_SECONDS` window). The
+registry reports "quota used, free in Ns" without spending a request.
+
+**The quota is one pool for the whole service, not an allowance per account** - the provider
+meters the API key, not individual users. The workbench says so plainly and shows the live
+counter per model, because a new account seeing "3 of 3 used" would otherwise look like a bug or
+like something being charged to them. Each model has its own quota, so a full one is a reason to
+pick another rather than to wait. The window slides: a request frees its own slot 60 seconds
+after it was made, rather than the whole counter clearing at a fixed time.
 
 ## Testing
 
 ```bash
-# Backend unit tests (133)
+# Backend unit tests (146)
 cd server && PYTHONPATH=. ./venv/bin/python -m pytest
 
 # 48 of these need a real MongoDB: the shared quota counter and the single-use email tokens
@@ -399,6 +453,50 @@ Two settings are easy to miss and break things quietly:
 `VITE_API_URL` is inlined into the frontend bundle at **build** time, so changing the API address
 means rebuilding and redeploying the website, not just editing a setting.
 
+The deployment in the diagram - Azure Container Apps, Static Web Apps, Container Registry, Key
+Vault, Application Insights and a Jenkins VM - is written up step by step in
+[`AZURE_DEPLOYMENT.md`](AZURE_DEPLOYMENT.md).
+
+## CI/CD
+
+A push to `main` reaches Jenkins by webhook and runs the [`Jenkinsfile`](Jenkinsfile): tests,
+engine parity, lint, image build, Trivy scan, push, deploy, then a `/health` check that rolls
+back the previous image if the new revision does not answer.
+
+Two things stop it from paying for the same work twice.
+
+**It only runs what the commit touched.** [`ci/changed-scopes.sh`](ci/changed-scopes.sh) diffs
+against the last commit that built *green*, so a fix after a red build still sees everything
+since the last known-good state:
+
+| Changed | Runs |
+|---|---|
+| `server/`, `shared/` | backend tests, parity, image, scan, push, deploy API, verify |
+| `client/` | lint + typecheck, deploy web |
+| `vscode-extension/` | engine parity only |
+| `*.md`, `LICENSE`, `docs/` | nothing - finishes in seconds |
+| `Jenkinsfile`, `ci/`, `.dockerignore` | everything |
+
+Anything it cannot reason about - a first build, a force push, a missing base commit - runs the
+full pipeline. Being wrong towards doing more work is recoverable; skipping a stage that was
+needed ships a bug.
+
+**It reuses dependencies that have not changed.**
+[`ci/cached-install.sh`](ci/cached-install.sh) hashes the lock files that produced an install and
+stores that hash inside the install itself, so `npm ci` and `pip install` are skipped while the
+hash still matches. The stamp is written only after the install succeeds, and lives inside the
+directory it describes - so a wiped or half-finished install can never be mistaken for a valid
+cache. Measured on `client/`: **49.9s → 0.02s** on a hit.
+
+Docker layer caching matters as much. `DOCKER_BUILDKIT=1` keeps the build cache outside the image
+store, so the routine post-build cleanup can no longer delete it, and an unchanged
+`requirements.txt` means the dependency layer in `server/Dockerfile` is reused instead of rebuilt.
+
+Caching only ever skips *reinstalling identical dependencies*. It never reuses a test result: if
+`server/` changed, the full backend suite and the parity check both run, every time. Two build
+parameters override all of it - `FULL_BUILD` to run everything, `REFRESH_CACHES` to reinstall
+from scratch.
+
 ## Distribution
 
 Published on the Visual Studio Marketplace as **`imageshrink.imageshrink-ai`**. Search
@@ -423,7 +521,7 @@ Nothing needs reconfiguring first - the extension is standalone and has no backe
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 18, Vite, TypeScript, MUI v9, React Router v6 |
+| Frontend | React 19, Vite, TypeScript, MUI v9, React Router v7 |
 | Backend | FastAPI, Python 3.12, Uvicorn |
 | Database | MongoDB (async via Motor) |
 | AI | Groq Cloud (`openai/gpt-oss-120b`) |
