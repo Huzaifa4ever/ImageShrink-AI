@@ -22,9 +22,20 @@ export function validateDockerfileContent(content: string): string | null {
   if (!meaningful.length) {
     return 'There is nothing to analyze - add the contents of a Dockerfile first.';
   }
-  if (!meaningful.some((line) => /^FROM\s+\S/i.test(line))) {
+  const fromLines = meaningful.filter((line) => /^FROM\s+\S/i.test(line));
+  if (!fromLines.length) {
     return 'This does not look like a Dockerfile: it has no FROM instruction, which every '
       + 'Dockerfile must start with. Paste the contents of a Dockerfile and try again.';
+  }
+
+  for (const line of fromLines) {
+    const args = line.split(/\s+/).slice(1).filter((word) => !word.startsWith('--'));
+    const valid = args.length === 1 || (args.length === 3 && args[1].toUpperCase() === 'AS');
+    if (!valid) {
+      return `'${line.slice(0, 60)}' is not a valid FROM instruction. FROM takes one image `
+        + "reference, optionally followed by 'AS <name>' - for example 'FROM python:3.12-slim'. "
+        + "Docker would reject this file with 'FROM requires either one or three arguments'.";
+    }
   }
   return null;
 }

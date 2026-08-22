@@ -145,6 +145,12 @@ export interface LayerOptimization {
 
 export type ModelStatus = 'available' | 'busy' | 'unavailable' | 'unknown';
 
+export interface ModelQuota {
+  remaining: number;
+  capacity: number;
+  resetInSeconds: number;
+}
+
 export interface AiModel {
   id: string;
   label: string;
@@ -152,12 +158,15 @@ export interface AiModel {
   status: ModelStatus;
   reason: string;
   latencyMs: number | null;
+  quota: ModelQuota;
 }
 
 export interface ModelCatalog {
   models: AiModel[];
   default: string;
   probed: boolean;
+  requestsPerMinute: number;
+  windowSeconds: number;
   error: string | null;
 }
 
