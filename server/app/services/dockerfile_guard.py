@@ -59,6 +59,40 @@ def _covered_lines(content: str) -> set[int]:
     return covered
 
 
+def _check_from(instruction) -> Rejection | None:
+    """Hold a FROM to the grammar Docker's own parser enforces.
+
+    `FROM [--flag=value...] <image> [AS <name>]` — one argument, or three with AS in the
+    middle. Nothing else builds. This is what catches a sentence typed after the keyword:
+    `FROM what is the capital of Pakistan` satisfies "has a FROM" but is not a Dockerfile,
+    and quoting the real constraint is more use to somebody than calling their input
+    irrelevant. The image reference itself is not second-guessed — a name that does not
+    exist in any registry is a pull failure, not a syntax error, and not this code's call.
+    """
+    words = instruction.value.split()
+    arguments = [word for word in words if not word.startswith("--")]
+
+    if len(arguments) == 1:
+        return None
+    if len(arguments) == 3 and arguments[1].upper() == "AS":
+        return None
+
+    if not arguments:
+        detail = "it names no image at all"
+    elif len(arguments) == 2:
+        detail = f"it has a second word ({arguments[1]!r}) that is not 'AS <name>'"
+    else:
+        detail = f"it has {len(arguments)} arguments"
+
+    return Rejection(
+        "bad_from",
+        f"Line {instruction.line} is not a valid FROM instruction: {detail}. FROM takes one "
+        "image reference, optionally followed by 'AS <name>' — for example "
+        "'FROM python:3.12-slim' or 'FROM node:20 AS builder'. Docker would reject this file "
+        "before building it, with 'FROM requires either one or three arguments'.",
+    )
+
+
 def check(content: str) -> Rejection | None:
     """Return why ``content`` is not a Dockerfile, or ``None`` if it looks like one."""
     if "\x00" in content:
@@ -85,6 +119,10 @@ def check(content: str) -> Rejection | None:
             "This does not look like a Dockerfile: it has no FROM instruction, which every "
             "Dockerfile must start with. Paste the contents of a Dockerfile and try again.",
         )
+
+    for instruction in parsed.of("FROM"):
+        if rejection := _check_from(instruction):
+            return rejection
 
     covered = _covered_lines(content)
     junk = [

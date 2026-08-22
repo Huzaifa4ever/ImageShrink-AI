@@ -4,7 +4,7 @@ import {
   Alert, LinearProgress, Stack, alpha, Select, MenuItem, FormControl,
   CircularProgress, Chip, Divider, Tooltip,
 } from '@mui/material';
-import { CloudUpload, AutoAwesome, ContentPaste, Memory, Refresh } from '@mui/icons-material';
+import { CloudUpload, AutoAwesome, ContentPaste, Memory, Refresh, Groups } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { dockerService } from '../services/dockerService';
 import { apiErrorMessage } from '../services/api';
@@ -20,7 +20,6 @@ const STATUS_META: Record<ModelStatus, { color: string; label: string; hint: str
   unknown: { color: '#A1A1AA', label: 'Not checked', hint: 'Listed by the provider, but not health-checked yet' },
 };
 
-/** Only these are worth sending an analysis to. */
 const isUsable = (m: AiModel) => m.status === 'available' || m.status === 'unknown';
 
 export default function WorkbenchPage() {
@@ -38,6 +37,8 @@ export default function WorkbenchPage() {
   const [checking, setChecking] = useState(false);
   const [probed, setProbed] = useState(false);
   const [autoSwitched, setAutoSwitched] = useState<string | null>(null);
+  const [requestsPerMinute, setRequestsPerMinute] = useState(0);
+  const [windowSeconds, setWindowSeconds] = useState(60);
 
   const loadModels = useCallback(async (probe: boolean) => {
     if (probe) setChecking(true);
@@ -45,6 +46,8 @@ export default function WorkbenchPage() {
       const { data } = await dockerService.getModels(probe);
       setModels(data.models);
       setProbed(data.probed);
+      setRequestsPerMinute(data.requestsPerMinute ?? 0);
+      setWindowSeconds(data.windowSeconds ?? 60);
       setCatalogError(data.error);
       setSelectedModel((current) => {
         const stillGood = data.models.find((m) => m.id === current && isUsable(m));
@@ -61,6 +64,11 @@ export default function WorkbenchPage() {
   }, []);
 
   useEffect(() => { void loadModels(false); }, [loadModels]);
+
+  useEffect(() => {
+    const id = setInterval(() => { void loadModels(false); }, 20000);
+    return () => clearInterval(id);
+  }, [loadModels]);
 
   const acceptFile = useCallback((candidate: File) => {
     const problem = validateDockerfileName(candidate.name);
@@ -103,6 +111,10 @@ export default function WorkbenchPage() {
 
   const selected = models.find((m) => m.id === selectedModel);
   const selectedUnusable = selected && !isUsable(selected);
+
+  const totalCapacity = models.reduce((sum, m) => sum + (m.quota?.capacity ?? 0), 0);
+  const totalRemaining = models.reduce((sum, m) => sum + (m.quota?.remaining ?? 0), 0);
+  const requestLimit = models[0]?.quota?.capacity ?? requestsPerMinute ?? 0;
 
   return (
     <Box sx={{ position: 'relative', zIndex: 1 }}>
@@ -229,6 +241,35 @@ export default function WorkbenchPage() {
               analysis will go straight through.
             </Typography>
 
+            <Alert severity="info" icon={<Groups fontSize="small" />}
+              sx={{ mb: 2.5, bgcolor: alpha('#38BDF8', 0.05), border: '1px solid', borderColor: alpha('#38BDF8', 0.2) }}>
+              <Typography variant="body2" sx={{ lineHeight: 1.7 }}>
+                <strong>This quota is shared by everyone using ImageShrink.</strong> It is one pool
+                for the whole service, not an allowance per account - the AI provider meters our
+                API key, not individual users. So usage you did not cause is normal: if a model
+                shows {requestLimit} of {requestLimit} used on a brand new account, other people
+                made those requests. Nothing here is billed to you, and none of it counts against
+                you personally.
+              </Typography>
+              <Typography variant="body2" sx={{ lineHeight: 1.7, mt: 1.5 }}>
+                Each model has its own separate quota, so <strong>if one is full, pick another and
+                your analysis goes straight through.</strong> Slots are not released all at once:
+                each request frees its own slot {windowSeconds} seconds after it was made, so a
+                full model becomes usable again within about a minute.
+              </Typography>
+            </Alert>
+
+            {!!models.length && (
+              <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 1, flexWrap: 'wrap', gap: 1 }}>
+                <Typography className="mono" sx={{ fontSize: '0.66rem', color: 'text.secondary', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                  Shared quota, right now
+                </Typography>
+                <Typography className="mono" sx={{ fontSize: '0.68rem', color: totalRemaining > 0 ? '#4ADE80' : '#FF6B6B', fontWeight: 700 }}>
+                  {totalRemaining} of {totalCapacity} requests free across {models.length} model{models.length === 1 ? '' : 's'}
+                </Typography>
+              </Stack>
+            )}
+
             {catalogError && (
               <Alert severity="warning" sx={{ mb: 2, bgcolor: alpha('#FBBF24', 0.06), border: '1px solid', borderColor: alpha('#FBBF24', 0.25) }}>
                 <Typography variant="caption">{catalogError}</Typography>
@@ -242,6 +283,11 @@ export default function WorkbenchPage() {
                 {models.map((m) => {
                   const meta = STATUS_META[m.status];
                   const active = m.id === selectedModel;
+                  const capacity = m.quota?.capacity ?? 0;
+                  const remaining = m.quota?.remaining ?? capacity;
+                  const used = Math.max(0, capacity - remaining);
+                  const pressure = capacity ? (used / capacity) * 100 : 0;
+                  const barColor = remaining === 0 ? '#FF6B6B' : pressure >= 60 ? '#FBBF24' : '#4ADE80';
                   return (
                     <Box key={m.id} onClick={() => { if (m.status !== 'unavailable') { setSelectedModel(m.id); setAutoSwitched(null); } }}
                       sx={{ py: 1.5, px: 1.5, mx: -1.5, borderRadius: 2,
@@ -269,6 +315,25 @@ export default function WorkbenchPage() {
                       <Typography className="mono" variant="caption" sx={{ display: 'block', color: 'text.disabled', fontSize: '0.62rem', mt: 0.3, ml: 2.3 }}>
                         {m.id}{m.reason ? ` - ${m.reason}` : ''}
                       </Typography>
+
+                      {capacity > 0 && (
+                        <Box sx={{ mt: 1, ml: 2.3 }}>
+                          <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 0.5, gap: 1 }}>
+                            <Typography className="mono" variant="caption" sx={{ color: 'text.secondary', fontSize: '0.62rem' }}>
+                              {used} of {capacity} requests used
+                              <Box component="span" sx={{ color: 'text.disabled' }}> · shared by all users</Box>
+                            </Typography>
+                            <Typography className="mono" variant="caption" sx={{ color: barColor, fontSize: '0.62rem', fontWeight: 700 }}>
+                              {remaining === 0
+                                ? `full - a slot frees up in ~${m.quota.resetInSeconds}s`
+                                : `${remaining} free`}
+                            </Typography>
+                          </Stack>
+                          <LinearProgress variant="determinate" value={pressure}
+                            sx={{ height: 6, borderRadius: 3, bgcolor: alpha('#3F3F46', 0.4),
+                              '& .MuiLinearProgress-bar': { bgcolor: barColor, borderRadius: 3 } }} />
+                        </Box>
+                      )}
                     </Box>
                   );
                 })}

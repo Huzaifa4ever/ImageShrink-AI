@@ -53,6 +53,40 @@ def test_rejects_prose_that_smuggles_in_a_from():
     assert rejection.code == "mostly_prose"
 
 
+def test_rejects_a_question_typed_after_from():
+    """The reported case: `FROM <sentence>` has a FROM but is not a Dockerfile."""
+    rejection = check("FROM what is the capital of Pakistan\n")
+
+    assert rejection is not None
+    assert rejection.code == "bad_from"
+    assert "one image reference" in rejection.message
+
+
+def test_rejects_from_with_a_stray_second_word():
+    rejection = check("FROM ubuntu latest\nCMD [\"x\"]\n")
+
+    assert rejection is not None
+    assert rejection.code == "bad_from"
+
+
+def test_accepts_every_shape_of_from_docker_allows():
+    for line in (
+        "FROM scratch",
+        "FROM python:3.12-slim",
+        "FROM node:20 AS builder",
+        "FROM node:20 as builder",
+        "FROM gcr.io/distroless/static:nonroot",
+        "FROM node@sha256:abc123",
+        "FROM localhost:5000/myimage:tag",
+        "FROM --platform=linux/amd64 alpine:3.20",
+        "FROM --platform=$BUILDPLATFORM node:20 AS build",
+        # Build arguments interpolated into the image name, as server/Dockerfile does.
+        "FROM trivy-db-${BAKE_TRIVY_DB} AS trivy-db",
+        "FROM ${BASE_IMAGE}",
+    ):
+        assert check(line + '\nCMD ["x"]\n') is None, line
+
+
 def test_rejects_binary_content():
     rejection = check("%PDF-1.7\x00\x00garbage")
 

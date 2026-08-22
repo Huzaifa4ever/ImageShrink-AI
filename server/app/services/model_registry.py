@@ -112,6 +112,7 @@ async def list_models(probe: bool = False) -> dict:
             "default": settings.GROQ_MODEL,
             "probed": False,
             "requestsPerMinute": settings.MODEL_REQUESTS_PER_MINUTE,
+            "windowSeconds": settings.MODEL_RATE_WINDOW_SECONDS,
             "error": "No GROQ_API_KEY configured, so no model can be reached.",
         }
 
@@ -125,6 +126,7 @@ async def list_models(probe: bool = False) -> dict:
                 "default": settings.GROQ_MODEL,
                 "probed": False,
                 "requestsPerMinute": settings.MODEL_REQUESTS_PER_MINUTE,
+                "windowSeconds": settings.MODEL_RATE_WINDOW_SECONDS,
                 "error": f"Could not reach the AI provider: {provider.classify_error(e).reason}",
             }
 
@@ -153,6 +155,7 @@ async def list_models(probe: bool = False) -> dict:
         "default": settings.GROQ_MODEL,
         "probed": probe,
         "requestsPerMinute": settings.MODEL_REQUESTS_PER_MINUTE,
+        "windowSeconds": settings.MODEL_RATE_WINDOW_SECONDS,
         "error": None,
     }
 
