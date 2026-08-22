@@ -2,6 +2,19 @@
 pipeline {
   agent any
 
+  parameters {
+    booleanParam(
+      name: 'FULL_BUILD',
+      defaultValue: false,
+      description: 'Run every stage regardless of which files changed. Use when in doubt.'
+    )
+    booleanParam(
+      name: 'REFRESH_CACHES',
+      defaultValue: false,
+      description: 'Reinstall npm and pip dependencies from scratch instead of reusing them.'
+    )
+  }
+
   options {
     timestamps()
     buildDiscarder(logRotator(numToKeepStr: '30', artifactNumToKeepStr: '10'))
@@ -24,6 +37,20 @@ pipeline {
     TRIVY_VERSION  = '0.69.3'
     MONGO_IMAGE    = 'mongo:7'
     TEST_MONGO     = 'imageshrink-ci-mongo'
+
+    // Pinned rather than resolved at deploy time: `npx --yes <pkg>` would fetch whatever
+    // version is newest that day and run it against a production deployment token.
+    SWA_CLI_VERSION = '2.0.10'
+
+    // BuildKit keeps its layer cache outside the image store, so routine image cleanup can
+    // no longer delete it, and it builds the independent Dockerfile stages concurrently.
+    DOCKER_BUILDKIT = '1'
+
+    // One venv serves both test stages: requirements-dev.txt already includes
+    // requirements.txt, so a second environment was installing the same packages twice.
+    CI_VENV = 'server/.ci-venv'
+
+    REFRESH_CACHES = "${params.REFRESH_CACHES}"
   }
 
   stages {
@@ -35,18 +62,75 @@ pipeline {
           env.IMAGE_TAG = "${env.BUILD_NUMBER}-${env.GIT_SHA}"
           env.IMAGE_REF = "${env.ACR_LOGIN}/${env.IMAGE_NAME}:${env.IMAGE_TAG}"
           currentBuild.displayName = "#${env.BUILD_NUMBER} · ${env.GIT_SHA}"
+
+          // Which stages this commit actually requires. The base is the last commit that
+          // built green, so a fix after a red build still sees everything that changed since
+          // the last known-good state, not just since the failure.
+          def base = params.FULL_BUILD ? '' : (env.GIT_PREVIOUS_SUCCESSFUL_COMMIT ?: '')
+          if (params.FULL_BUILD) {
+            echo 'FULL_BUILD requested - change detection skipped.'
+          }
+
+          sh(script: "sh ci/changed-scopes.sh ${base}", returnStdout: true)
+            .trim()
+            .readLines()
+            .each { line ->
+              def parts = line.split('=', 2)
+              if (parts.size() == 2) { env[parts[0]] = parts[1] }
+            }
+
+          env.NEEDS_AZURE = (env.DEPLOY_API == 'true' || env.DEPLOY_WEB == 'true') ? 'true' : 'false'
+
+          currentBuild.description = "${env.REASON}: backend=${env.BACKEND} frontend=${env.FRONTEND} parity=${env.PARITY}"
+          echo """selected work (${env.REASON}):
+  backend tests   ${env.BACKEND}
+  rule parity     ${env.PARITY}
+  frontend checks ${env.FRONTEND}
+  deploy API      ${env.DEPLOY_API}
+  deploy web      ${env.DEPLOY_WEB}"""
         }
 
-        withCredentials([
-          usernamePassword(credentialsId: 'azure-sp', usernameVariable: 'AZ_USER', passwordVariable: 'AZ_PASS'),
-          string(credentialsId: 'azure-tenant', variable: 'AZ_TENANT')
-        ]) {
-          sh '''
-            set -eu
-            az login --service-principal -u "$AZ_USER" -p "$AZ_PASS" --tenant "$AZ_TENANT" --output none
-            az account show --query name -o tsv
-          '''
+        // Skipped for a documentation-only commit: nothing downstream talks to Azure, so
+        // there is no reason to exchange the service principal's credentials at all.
+        script {
+          if (env.NEEDS_AZURE == 'true') {
+            withCredentials([
+              usernamePassword(credentialsId: 'azure-sp', usernameVariable: 'AZ_USER', passwordVariable: 'AZ_PASS'),
+              string(credentialsId: 'azure-tenant', variable: 'AZ_TENANT')
+            ]) {
+              sh '''
+                set -eu
+                az login --service-principal -u "$AZ_USER" -p "$AZ_PASS" --tenant "$AZ_TENANT" --output none
+                az account show --query name -o tsv
+              '''
+            }
+          } else {
+            echo 'No Azure work in this build - skipping sign-in.'
+          }
         }
+      }
+    }
+
+    stage('Python deps') {
+      when { expression { env.BACKEND == 'true' || env.PARITY == 'true' } }
+      options { timeout(time: 10, unit: 'MINUTES') }
+      steps {
+        // Built once, before the parallel block, so the two test stages share it instead of
+        // racing to create their own copy of the same packages.
+        sh '''
+          set -eu
+          sh ci/cached-install.sh \
+            --key server/requirements.txt \
+            --key server/requirements-dev.txt \
+            --dir "$CI_VENV" \
+            -- sh -c '
+              set -eu
+              rm -rf "$CI_VENV"
+              python3 -m venv "$CI_VENV"
+              "$CI_VENV/bin/pip" install --quiet --upgrade pip
+              "$CI_VENV/bin/pip" install --quiet -r server/requirements-dev.txt
+            '
+        '''
       }
     }
 
@@ -54,10 +138,15 @@ pipeline {
       parallel {
 
         stage('Backend tests') {
+          when { expression { env.BACKEND == 'true' } }
           options { timeout(time: 12, unit: 'MINUTES') }
           steps {
             sh '''
               set -eu
+              # The workspace is reused between builds, so a report left by an earlier build
+              # would otherwise be republished as if it belonged to this one.
+              rm -f pytest-report.xml
+
               docker rm -f "$TEST_MONGO" >/dev/null 2>&1 || true
               docker run -d --name "$TEST_MONGO" -p 27017:27017 "$MONGO_IMAGE" >/dev/null
 
@@ -72,10 +161,7 @@ pipeline {
             sh '''
               set -eu
               cd server
-              python3 -m venv .ci-venv
-              ./.ci-venv/bin/pip install --quiet --upgrade pip
-              ./.ci-venv/bin/pip install --quiet -r requirements-dev.txt
-              ./.ci-venv/bin/python -m pytest -q --junitxml=../pytest-report.xml
+              "$WORKSPACE/$CI_VENV/bin/python" -m pytest -q --junitxml=../pytest-report.xml
             '''
             sh '''
               set -eu
@@ -90,42 +176,43 @@ pipeline {
             always {
               junit allowEmptyResults: true, testResults: 'pytest-report.xml'
               sh 'docker rm -f "$TEST_MONGO" >/dev/null 2>&1 || true'
-              sh 'rm -rf server/.ci-venv || true'
             }
           }
         }
 
         stage('Rule engine parity') {
+          when { expression { env.PARITY == 'true' } }
           options { timeout(time: 8, unit: 'MINUTES') }
           steps {
             sh '''
               set -eu
-              cd server
-              python3 -m venv .parity-venv
-              ./.parity-venv/bin/pip install --quiet --upgrade pip
-              ./.parity-venv/bin/pip install --quiet -r requirements.txt
+              sh ci/cached-install.sh \
+                --key vscode-extension/package-lock.json \
+                --dir vscode-extension/node_modules \
+                -- sh -c 'cd vscode-extension && npm ci --silent --no-audit --no-fund'
             '''
             sh '''
               set -eu
               cd vscode-extension
-              npm ci --silent
-              PARITY_PYTHON="$WORKSPACE/server/.parity-venv/bin/python" npm test
+              PARITY_PYTHON="$WORKSPACE/$CI_VENV/bin/python" npm test
             '''
-          }
-          post {
-            always {
-              sh 'rm -rf server/.parity-venv || true'
-            }
           }
         }
 
         stage('Frontend lint + typecheck') {
+          when { expression { env.FRONTEND == 'true' } }
           options { timeout(time: 8, unit: 'MINUTES') }
           steps {
             sh '''
               set -eu
+              sh ci/cached-install.sh \
+                --key client/package-lock.json \
+                --dir client/node_modules \
+                -- sh -c 'cd client && npm ci --silent --no-audit --no-fund'
+            '''
+            sh '''
+              set -eu
               cd client
-              npm ci --silent
               npm run lint
               npx tsc -b --noEmit || npx tsc -b
             '''
@@ -135,6 +222,7 @@ pipeline {
     }
 
     stage('Build image') {
+      when { expression { env.BACKEND == 'true' } }
       options { timeout(time: 20, unit: 'MINUTES') }
       steps {
         sh '''
@@ -153,10 +241,12 @@ pipeline {
     }
 
     stage('Scan') {
+      when { expression { env.BACKEND == 'true' } }
       options { timeout(time: 15, unit: 'MINUTES') }
       steps {
         sh '''
           set -eu
+          rm -rf reports
           mkdir -p reports
 
           docker run --rm \
@@ -187,6 +277,7 @@ pipeline {
     }
 
     stage('Push') {
+      when { expression { env.DEPLOY_API == 'true' } }
       options { timeout(time: 15, unit: 'MINUTES') }
       steps {
         retry(3) {
@@ -200,6 +291,7 @@ pipeline {
     }
 
     stage('Deploy API') {
+      when { expression { env.DEPLOY_API == 'true' } }
       options { timeout(time: 12, unit: 'MINUTES') }
       steps {
         sh '''
@@ -257,6 +349,7 @@ pipeline {
     }
 
     stage('Deploy web') {
+      when { expression { env.DEPLOY_WEB == 'true' } }
       options { timeout(time: 12, unit: 'MINUTES') }
       steps {
         withCredentials([
@@ -266,13 +359,20 @@ pipeline {
         ]) {
           sh '''
             set -eu
+            # Free when the Frontend stage already installed for this lockfile; does the work
+            # when that stage was skipped because only the backend changed.
+            sh ci/cached-install.sh \
+              --key client/package-lock.json \
+              --dir client/node_modules \
+              -- sh -c 'cd client && npm ci --silent --no-audit --no-fund'
+
             cd client
             {
               echo "VITE_API_URL=$VITE_API_URL"
               echo "VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID"
             } > .env.production
             npm run build
-            npx --yes @azure/static-web-apps-cli deploy ./dist \
+            npx --yes "@azure/static-web-apps-cli@$SWA_CLI_VERSION" deploy ./dist \
               --deployment-token "$SWA_TOKEN" \
               --env production
           '''
@@ -281,6 +381,7 @@ pipeline {
     }
 
     stage('Verify deploy') {
+      when { expression { env.DEPLOY_API == 'true' } }
       options { timeout(time: 10, unit: 'MINUTES') }
       steps {
         sh '''
@@ -289,8 +390,13 @@ pipeline {
                    --query properties.configuration.ingress.fqdn -o tsv)
           echo "probing https://$FQDN/health"
 
+          # A new revision usually answers in well under a minute, but a flat 10s pause meant
+          # a deploy that was ready at 22s was still reported at 30s. Poll quickly at first,
+          # then back off: same total patience (~9 min), less waiting on the common case.
           CODE=000
-          for i in $(seq 1 40); do
+          ELAPSED=0
+          for i in $(seq 1 60); do
+            if [ "$i" -le 10 ]; then STEP=3; else STEP=10; fi
             # Keep the status code and the body. Discarding them (curl -f ... 2>/dev/null)
             # makes every failure look identical: "never became healthy" cannot tell a
             # crashing container (503) from a wrong ingress port or a bad path (404).
@@ -299,10 +405,10 @@ pipeline {
 
             if [ "$CODE" = 200 ] && printf '%s' "$BODY" | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
               RUNNING=$(printf '%s' "$BODY" | sed -n 's/.*"build"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p')
-              echo "healthy after $((i * 10))s — build ${RUNNING:-unknown}, expected $IMAGE_TAG"
+              echo "healthy after ${ELAPSED}s - build ${RUNNING:-unknown}, expected $IMAGE_TAG"
 
               if [ -n "$RUNNING" ] && [ "$RUNNING" != "$IMAGE_TAG" ]; then
-                sleep 10
+                sleep "$STEP"; ELAPSED=$((ELAPSED + STEP))
                 continue
               fi
               rm -f /tmp/health.$$
@@ -310,13 +416,13 @@ pipeline {
             fi
 
             if [ $((i % 5)) = 1 ]; then
-              echo "  attempt $i: HTTP $CODE $(printf '%s' "$BODY" | tr -d '\\n' | cut -c1-200)"
+              echo "  ${ELAPSED}s: HTTP $CODE $(printf '%s' "$BODY" | tr -d '\\n' | cut -c1-200)"
             fi
-            sleep 10
+            sleep "$STEP"; ELAPSED=$((ELAPSED + STEP))
           done
 
           rm -f /tmp/health.$$
-          echo "never became healthy within 400s — last status HTTP $CODE"
+          echo "never became healthy within ${ELAPSED}s - last status HTTP $CODE"
           echo "  000 = nothing answered; 404 = wrong path or ingress port; 503 = no replica running"
           exit 1
         '''
@@ -368,6 +474,7 @@ pipeline {
     }
 
     stage('Prune registry') {
+      when { expression { env.DEPLOY_API == 'true' } }
       options { timeout(time: 10, unit: 'MINUTES') }
       steps {
         sh '''
@@ -387,12 +494,21 @@ pipeline {
     always {
       sh '''
         docker image rm "$IMAGE_REF" >/dev/null 2>&1 || true
-        docker image prune -f >/dev/null 2>&1 || true
+        docker builder prune -f --keep-storage=10GB >/dev/null 2>&1 || true
+        docker image prune -f --filter 'until=168h' >/dev/null 2>&1 || true
         az logout >/dev/null 2>&1 || true
       '''
     }
     success {
-      echo "Deployed ${env.IMAGE_TAG}"
+      script {
+        if (env.REASON == 'docs-only') {
+          echo 'Documentation-only commit - no build or deploy was needed.'
+        } else if (env.DEPLOY_API == 'true' || env.DEPLOY_WEB == 'true') {
+          echo "Deployed ${env.IMAGE_TAG} (api=${env.DEPLOY_API}, web=${env.DEPLOY_WEB})"
+        } else {
+          echo 'Checks passed. Nothing required deployment.'
+        }
+      }
     }
     failure {
       echo "Build ${env.BUILD_NUMBER} (${env.GIT_SHA}) failed. Rollback target was ${env.PREVIOUS_REVISION ?: 'n/a'}."
